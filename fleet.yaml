@@ -1,0 +1,11 @@
+# fleet.yaml — registry of record for the agents on this VM.
+# Written only by the lifecycle scripts in scripts/ — never edit by hand.
+# Fields per entry: name, status (active|retired), created, purpose, retired.
+agents:
+- name: aruvi-spec-reviewer
+  status: active
+  created: '2026-08-15'
+  purpose: 'Reviews aruvii REQ-NNN specs against the architecture, ADRs, product design
+    and roadmap — at /crq stage 3 and before /approved is posted on a draft MR. Findings
+    only: it never edits files, never drafts spec text, never approves. Reports land
+    verbatim as a single MR comment and as the same message in its Discord channel.'

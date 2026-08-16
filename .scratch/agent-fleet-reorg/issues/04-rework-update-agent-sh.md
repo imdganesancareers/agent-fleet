@@ -1,7 +1,7 @@
 # 04 — Rework update-agent.sh: name-based CLI
 
 Type: task
-Status: open
+Status: resolved
 Blocked by: 01
 
 ## Question
@@ -23,3 +23,11 @@ Align `update-agent.sh` with the fleet conventions:
 
 Verify with `bash -n`. Done when `sudo ./update-agent.sh aruvi-spec-reviewer`
 is the documented invocation.
+
+## Answer
+
+Done 2026-08-16. CLI is `sudo ./scripts/update-agent.sh <name>`; same root
+resolution and name cross-check as create. After rendering CLAUDE.md and
+refreshing the home archive it calls `fleet-registry.py set-purpose` so the
+registry's one-line purpose follows identity edits. `bash -n` clean;
+missing-recipe path verified. Live run deferred (restarts the session).

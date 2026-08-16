@@ -1,7 +1,7 @@
 # 05 — Write delete-agent.sh: retire an agent
 
 Type: task
-Status: open
+Status: resolved
 Blocked by: 01
 
 ## Question
@@ -24,3 +24,13 @@ New script `delete-agent.sh <name>` (root-run):
 
 Verify with `bash -n`; do NOT run it against aruvi-spec-reviewer. Done when
 the script exists, is executable, and its dry logic reads correct.
+
+## Answer
+
+Done 2026-08-16. `sudo ./scripts/delete-agent.sh <name> [--yes]` prints the
+destroy/keep contract, requires typing the name (verified: a wrong name aborts
+with nothing destroyed), kills the agent's tmux server and processes, runs
+`userdel -r` (mail-spool noise filtered, success re-verified via `id`), then
+`fleet-registry.py retire` stamps status/date. Ends with the manual checklist
+(GitLab ssh key + PAT, Discord application). Refuses when the user is missing,
+the registry entry is missing, or already retired — pointing at list-agent.sh.

@@ -23,9 +23,11 @@ agent data out of the future `agent-fleet` git repo. Done when `sudo
   - Entry fields: `name`, `status` (`active`|`retired`), `created`, `purpose`
     (one line), `retired` (date, only when retired). Nothing else — no tokens,
     channels, or repo URLs (those live in agent.yaml).
-  - All four scripts take the agent **name**; repo root resolved from the
-    script's own location (`dirname "$(readlink -f "$0")"`). Path-based
-    invocation drops entirely.
+  - All four scripts take the agent **name**; they live in `scripts/`
+    (operator amendment, 2026-08-16), so the repo root resolves as the parent
+    of the script's own directory. Path-based invocation drops entirely.
+    `scripts/fleet-registry.py` is the shared helper and the only code that
+    writes fleet.yaml.
   - Retirement = `status: retired` in the registry; folder stays at
     `agents/<name>/`, never moves. Delete destroys user/home/session only,
     keeps the recipe, prints a manual checklist for GitLab SSH key / Discord
@@ -40,6 +42,12 @@ agent data out of the future `agent-fleet` git repo. Done when `sudo
 ## Decisions so far
 
 <!-- one line per closed ticket -->
+
+- [01 — Lay down the fleet layout](issues/01-lay-down-fleet-layout.md) — `agents/aruvi-spec-reviewer/` live, `fleet.yaml` seeded, scripts moved to `scripts/`
+- [02 — Rework create-agent.sh](issues/02-rework-create-agent-sh.md) — name-based CLI, registry upsert, invite URL into the agent folder
+- [03 — Write list-agent.sh](issues/03-write-list-agent-sh.md) — fleet table + drift doctor, exit 1 on drift; verified live, drift-free
+- [04 — Rework update-agent.sh](issues/04-rework-update-agent-sh.md) — name-based CLI, refreshes the registry purpose on identity edits
+- [05 — Write delete-agent.sh](issues/05-write-delete-agent-sh.md) — type-name confirm / `--yes`, retires the entry, keeps the recipe, prints manual-cleanup checklist
 
 ## Not yet specified
 

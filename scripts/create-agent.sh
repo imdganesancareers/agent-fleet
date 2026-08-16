@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # create-agent.sh — provision (or reconcile) one Discord-connected Claude Code agent
-# on this VM from a single agent.yaml.
+# on this VM from its recipe at agents/<name>/agent.yaml.
 #
-#   sudo ./create-agent.sh <name>.agent.yaml
+#   sudo ./scripts/create-agent.sh <name>
 #
 # Rerunnable: existing pieces (user, installs, clone, ssh key) are kept, rendered
-# config is refreshed, and the tmux session is always killed and relaunched.
-# Author the YAML with the /create-agent skill; schema in
+# config is refreshed, and the tmux session is always killed and relaunched. On
+# success the agent's fleet.yaml entry is upserted (status active, created date
+# kept on rerun). Author the recipe with the /create-agent skill; schema in
 # .claude/skills/create-agent/agent-yaml.md.
 
 set -euo pipefail
@@ -19,9 +20,16 @@ ok()   { printf '\033[1;32m ok \033[0m%s\n' "$*"; }
 warn() { printf '\033[1;33mwarn\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31mfail\033[0m %s\n' "$*" >&2; exit 1; }
 
-[[ ${1:-} ]] || die "usage: sudo $0 <name>.agent.yaml"
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+ROOT=$(dirname "$SCRIPT_DIR")
+FLEET="$ROOT/fleet.yaml"
+
+CLI_NAME=${1:-}
+[[ $CLI_NAME ]] || die "usage: sudo $0 <name>   (reads $ROOT/agents/<name>/agent.yaml)"
+[[ $CLI_NAME =~ ^[a-z][a-z0-9-]{0,19}$ ]] || die "name must be lowercase [a-z][a-z0-9-], max 20 chars"
 [[ $EUID -eq 0 ]] || die "must run as root"
-YAML=$(readlink -f "$1"); [[ -f $YAML ]] || die "no such file: $1"
+YAML="$ROOT/agents/$CLI_NAME/agent.yaml"
+[[ -f $YAML ]] || die "no recipe at $YAML — author it with the /create-agent skill"
 chmod 600 "$YAML"
 
 # ---------- host prerequisites (the only apt step) ----------
@@ -38,10 +46,10 @@ ok " tmux, git, curl, unzip, python3(+yaml)"
 # ---------- parse agent.yaml, validate, render config files ----------
 STAGE=$(mktemp -d); chmod 700 "$STAGE"; trap 'rm -rf "$STAGE"' EXIT
 
-python3 - "$YAML" "$STAGE" <<'PY' || die "agent.yaml invalid"
+python3 - "$YAML" "$STAGE" "$CLI_NAME" <<'PY' || die "agent.yaml invalid"
 import json, re, sys, yaml
 
-path, stage = sys.argv[1], sys.argv[2]
+path, stage, cli_name = sys.argv[1], sys.argv[2], sys.argv[3]
 cfg = yaml.safe_load(open(path))
 
 def get(d, dotted, req=True):
@@ -67,6 +75,8 @@ if placeholders:
 name = get(cfg, 'name')
 if not re.fullmatch(r'[a-z][a-z0-9-]{0,19}', name):
     sys.exit("name must be lowercase [a-z][a-z0-9-], max 20 chars")
+if name != cli_name:
+    sys.exit(f"agent.yaml name '{name}' does not match folder agents/{cli_name}/")
 
 repo = get(cfg, 'gitlab.repo')
 repo_dir = re.sub(r'\.git$', '', repo.rsplit('/', 1)[-1])
@@ -270,12 +280,16 @@ as_agent "tmux kill-session -t '$NAME' 2>/dev/null" || true
 as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'DISCORD_ACCESS_MODE=static claude --dangerously-skip-permissions --channels plugin:$PLUGIN'"
 ok " session '$NAME' running as $AGENT in $REPO_PATH"
 
+# ---------- registry ----------
+python3 "$SCRIPT_DIR/fleet-registry.py" "$FLEET" upsert "$NAME" --purpose-from "$YAML"
+ok " fleet.yaml entry upserted ($NAME: active)"
+
 # ---------- summary ----------
 echo
 log "$DISPLAY_NAME is provisioned."
 if [[ -n $APP_ID ]]; then
   INVITE_URL="https://discord.com/api/oauth2/authorize?client_id=$APP_ID&scope=bot&permissions=274878008384"
-  INVITE_FILE="$(dirname "$YAML")/$NAME.invite-url.txt"
+  INVITE_FILE="$ROOT/agents/$NAME/invite-url.txt"
   printf '%s\n' "$INVITE_URL" > "$INVITE_FILE"
   echo "  bot invite (once per server), saved to $INVITE_FILE:"
   echo "      $INVITE_URL"

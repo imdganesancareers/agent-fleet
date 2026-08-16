@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# update-agent.sh — apply identity-only changes from <name>.agent.yaml to an
-# already-provisioned agent: re-render CLAUDE.md (persona, purpose, soul,
-# guardrails), refresh the archived YAML, restart the tmux session.
+# update-agent.sh — apply identity-only changes from agents/<name>/agent.yaml to
+# an already-provisioned agent: re-render CLAUDE.md (persona, purpose, soul,
+# guardrails), refresh the archived YAML and the registry's purpose line,
+# restart the tmux session.
 #
-#   sudo ./update-agent.sh <name>.agent.yaml
+#   sudo ./scripts/update-agent.sh <name>
 #
 # Deliberately narrow for now: tokens, Discord access config, git identity,
 # repo and installs are create-agent.sh's job — rerun that for those fields.
@@ -18,17 +19,23 @@ log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 ok()   { printf '\033[1;32m ok \033[0m%s\n' "$*"; }
 die()  { printf '\033[1;31mfail\033[0m %s\n' "$*" >&2; exit 1; }
 
-[[ ${1:-} ]] || die "usage: sudo $0 <name>.agent.yaml"
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+ROOT=$(dirname "$SCRIPT_DIR")
+FLEET="$ROOT/fleet.yaml"
+
+CLI_NAME=${1:-}
+[[ $CLI_NAME ]] || die "usage: sudo $0 <name>   (reads $ROOT/agents/<name>/agent.yaml)"
 [[ $EUID -eq 0 ]] || die "must run as root"
-YAML=$(readlink -f "$1"); [[ -f $YAML ]] || die "no such file: $1"
+YAML="$ROOT/agents/$CLI_NAME/agent.yaml"
+[[ -f $YAML ]] || die "no recipe at $YAML — run create-agent.sh first"
 
 # ---------- parse identity fields, render CLAUDE.md ----------
 STAGE=$(mktemp -d); chmod 700 "$STAGE"; trap 'rm -rf "$STAGE"' EXIT
 
-python3 - "$YAML" "$STAGE" <<'PY' || die "agent.yaml invalid"
+python3 - "$YAML" "$STAGE" "$CLI_NAME" <<'PY' || die "agent.yaml invalid"
 import re, sys, yaml
 
-path, stage = sys.argv[1], sys.argv[2]
+path, stage, cli_name = sys.argv[1], sys.argv[2], sys.argv[3]
 cfg = yaml.safe_load(open(path))
 
 def get(d, dotted, req=True):
@@ -42,6 +49,8 @@ def get(d, dotted, req=True):
 name = get(cfg, 'name')
 if not re.fullmatch(r'[a-z][a-z0-9-]{0,19}', name):
     sys.exit("name must be lowercase [a-z][a-z0-9-], max 20 chars")
+if name != cli_name:
+    sys.exit(f"agent.yaml name '{name}' does not match folder agents/{cli_name}/")
 
 # identity fields must be real text, not placeholders
 for f in ('persona.display_name', 'purpose', 'soul', 'guardrails'):
@@ -103,7 +112,8 @@ id -u "$AGENT" >/dev/null 2>&1 || die "no such agent: $AGENT — run create-agen
 # ---------- apply identity, refresh archive ----------
 install -o root -g root -m 0444 "$STAGE/CLAUDE.md" "$HOME_DIR/.claude/CLAUDE.md"
 install -o root -g root -m 0400 "$YAML"            "$HOME_DIR/agent.yaml"
-ok " identity applied (CLAUDE.md re-rendered, agent.yaml archive refreshed)"
+python3 "$SCRIPT_DIR/fleet-registry.py" "$FLEET" set-purpose "$NAME" --purpose-from "$YAML"
+ok " identity applied (CLAUDE.md re-rendered, archive + registry purpose refreshed)"
 
 # ---------- relaunch so the new identity loads ----------
 log "restarting tmux session '$NAME'"
