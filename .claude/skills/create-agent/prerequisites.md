@@ -39,6 +39,8 @@ Snowflake IDs (needs Discord **Developer Mode**: User Settings → Advanced):
 
 ## Claude
 
-Nothing to collect. Auth is OAuth, performed once by attaching to the agent's tmux
-session after `create-agent.sh` finishes (the skill's hand-off step prints the exact
-command). No API key, no token in the YAML.
+Nothing to collect per agent. Auth is the **fleet token** at `secrets/claude-token`
+(account-wide, ~1-year, injected as `CLAUDE_CODE_OAUTH_TOKEN` at launch — see
+`docs/adr/0001`). If the file is missing, the operator mints it once in their own
+terminal: `! sudo ./scripts/setup-claude-token.sh` (interactive browser authorize).
+No API key, no token in the YAML.

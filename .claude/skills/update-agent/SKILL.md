@@ -43,8 +43,8 @@ sudo ./scripts/update-agent.sh <name>
 
 It re-renders `CLAUDE.md` from the YAML, refreshes the archived copy and the
 `fleet.yaml` purpose line, and **kills and relaunches** the tmux session —
-in-flight work in the session dies with it; the OAuth login survives. On
-failure, fix the cause here and rerun.
+in-flight work in the session dies with it; the fleet token is re-injected at
+launch. On failure, fix the cause here and rerun.
 
 Done when the script prints its summary line. Close with the test: mention the
 bot in its Discord channel and confirm the new identity shows in its reply.

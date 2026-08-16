@@ -31,6 +31,10 @@ CLI_NAME=${1:-}
 YAML="$ROOT/agents/$CLI_NAME/agent.yaml"
 [[ -f $YAML ]] || die "no recipe at $YAML — author it with the /create-agent skill"
 chmod 600 "$YAML"
+# fail fast: the launch is impossible without the fleet's shared Claude token
+CLAUDE_TOKEN_FILE="$ROOT/secrets/claude-token"
+[[ -s $CLAUDE_TOKEN_FILE ]] \
+  || die "no fleet Claude token at secrets/claude-token — mint it once with: sudo $SCRIPT_DIR/setup-claude-token.sh"
 
 # ---------- host prerequisites (the only apt step) ----------
 log "host prerequisites"
@@ -240,6 +244,12 @@ install -o root -g root -m 0444 "$STAGE/settings.json"  "$HOME_DIR/.claude/setti
 install -o root -g root -m 0400 "$YAML"                 "$HOME_DIR/agent.yaml"
 ok " identity rendered (CLAUDE.md, settings.json, agent.yaml archive — root-owned)"
 
+# ---------- claude auth: the fleet's shared OAuth token ----------
+# One account-wide token (see docs/adr/0001) injected as CLAUDE_CODE_OAUTH_TOKEN
+# at launch — agents never do their own OAuth login. Existence checked at startup.
+install -o "$AGENT" -g "$AGENT" -m 0400 "$CLAUDE_TOKEN_FILE" "$HOME_DIR/.claude/claude-token"
+ok " fleet claude token installed"
+
 # ---------- discord config ----------
 # .env MUST stay agent-owned 0600 (the plugin chmods it at boot; EPERM kills token
 # loading). access.json is root-owned 0444 — DISCORD_ACCESS_MODE=static in .env
@@ -265,20 +275,20 @@ if grep -qs "\"projectPath\": \"$REPO_PATH\"" "$HOME_DIR/.claude/plugins/install
   ok " discord plugin installed for $REPO_PATH"
 else
   log "installing discord plugin (project scope, from launch cwd)"
-  as_agent "cd '$REPO_PATH' && claude plugin marketplace add $MARKETPLACE" >/dev/null 2>&1 \
+  as_agent "cd '$REPO_PATH' && CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) claude plugin marketplace add $MARKETPLACE" >/dev/null 2>&1 \
     || warn "marketplace add failed (may already be added)"
-  if as_agent "cd '$REPO_PATH' && claude plugin install $PLUGIN --scope project"; then
+  if as_agent "cd '$REPO_PATH' && CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) claude plugin install $PLUGIN --scope project"; then
     ok " plugin installed"
   else
-    warn "plugin install failed — on a fresh agent, finish the OAuth login first, then RERUN this script"
+    warn "plugin install failed — rerun this script; if it persists, remint the fleet token (setup-claude-token.sh)"
   fi
 fi
 
 # ---------- relaunch ----------
 log "restarting tmux session '$NAME'"
 as_agent "tmux kill-session -t '$NAME' 2>/dev/null" || true
-as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'DISCORD_ACCESS_MODE=static claude --dangerously-skip-permissions --channels plugin:$PLUGIN'"
-ok " session '$NAME' running as $AGENT in $REPO_PATH"
+as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static claude --dangerously-skip-permissions --channels plugin:$PLUGIN'"
+ok " session '$NAME' running as $AGENT in $REPO_PATH (authenticated via fleet token)"
 
 # ---------- registry ----------
 python3 "$SCRIPT_DIR/fleet-registry.py" "$FLEET" upsert "$NAME" --purpose-from "$YAML"
@@ -295,9 +305,7 @@ if [[ -n $APP_ID ]]; then
   echo "      $INVITE_URL"
 fi
 cat <<EOF
-  first run: attach and complete the Claude OAuth login, then detach (Ctrl-b d):
-      sudo -u $AGENT tmux attach -t $NAME
-  (if the plugin install was skipped above, rerun this script after logging in)
+  the session is authenticated via the fleet claude token — no login needed.
   peek at the session any time:
       sudo -u $AGENT tmux capture-pane -pt $NAME | tail -20
   test: mention the bot in its Discord channel and wait for the reaction.

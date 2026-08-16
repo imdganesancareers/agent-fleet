@@ -108,6 +108,10 @@ as_agent() { runuser -l "$AGENT" -c "$1"; }
 
 id -u "$AGENT" >/dev/null 2>&1 || die "no such agent: $AGENT — run create-agent.sh first"
 [[ -d $REPO_PATH ]] || die "workspace $REPO_PATH missing — gitlab.repo changed? that's create-agent.sh's job"
+# fail fast: the relaunch is impossible without the fleet's shared Claude token
+CLAUDE_TOKEN_FILE="$ROOT/secrets/claude-token"
+[[ -s $CLAUDE_TOKEN_FILE ]] \
+  || die "no fleet Claude token at secrets/claude-token — mint it once with: sudo $SCRIPT_DIR/setup-claude-token.sh"
 
 # ---------- apply identity, refresh archive ----------
 install -o root -g root -m 0444 "$STAGE/CLAUDE.md" "$HOME_DIR/.claude/CLAUDE.md"
@@ -116,9 +120,11 @@ python3 "$SCRIPT_DIR/fleet-registry.py" "$FLEET" set-purpose "$NAME" --purpose-f
 ok " identity applied (CLAUDE.md re-rendered, archive + registry purpose refreshed)"
 
 # ---------- relaunch so the new identity loads ----------
+install -o "$AGENT" -g "$AGENT" -m 0400 "$CLAUDE_TOKEN_FILE" "$HOME_DIR/.claude/claude-token"
+
 log "restarting tmux session '$NAME'"
 as_agent "tmux kill-session -t '$NAME' 2>/dev/null" || true
-as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'DISCORD_ACCESS_MODE=static claude --dangerously-skip-permissions --channels plugin:$PLUGIN'"
+as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static claude --dangerously-skip-permissions --channels plugin:$PLUGIN'"
 ok " session '$NAME' relaunched"
 
 echo

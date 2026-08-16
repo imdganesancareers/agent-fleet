@@ -3,3 +3,6 @@
 agents/
 *.agent.yaml
 *.invite-url.txt
+
+# Fleet-level secrets (shared Claude OAuth token)
+secrets/

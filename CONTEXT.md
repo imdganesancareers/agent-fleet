@@ -1,7 +1,7 @@
 # CONTEXT
 
-Glossary for the agent-fleet repo (currently the `agentcreator` directory). One
-term, one meaning; scripts, skills, and docs use these words exactly.
+Glossary for the agent-fleet repo. One term, one meaning; scripts, skills, and
+docs use these words exactly.
 
 ## Terms
 
@@ -23,6 +23,11 @@ term, one meaning; scripts, skills, and docs use these words exactly.
 - **Active / Retired** — registry statuses. Retiring destroys the unix user,
   home, and session but keeps the agent folder (the recipe) and the registry
   entry; the folder never moves.
+- **Fleet token** — `secrets/claude-token`: the one account-wide Claude OAuth
+  token (operator's Max subscription, ~1-year lifetime) minted by
+  `setup-claude-token.sh` and injected into every agent session as
+  `CLAUDE_CODE_OAUTH_TOKEN`. The whole fleet runs as the operator's Claude
+  account and shares its rate limits; agents never hold their own Claude login.
 - **Drift** — any disagreement between the registry and reality (unix users,
   tmux sessions, agent folders). `list-agent.sh` reports drift; it never hides
   or repairs it silently.

@@ -7,9 +7,9 @@ disable-model-invocation: true
 Produce one `agents/<name>/agent.yaml` — the single self-contained recipe
 `scripts/create-agent.sh` turns into a running, Discord-connected Claude agent on
 this VM — then run the script yourself and drive it to green. Only root operators work in this session,
-so provisioning is yours end to end; the operator's own hands are needed just
-twice: filling placeholders, and the OAuth login inside tmux (interactive — a
-terminal you cannot attach).
+so provisioning is yours end to end; the operator's own hands are needed only
+for filling placeholders — and, if the fleet token is missing, one interactive
+`setup-claude-token.sh` run in their own terminal.
 
 ## 1 · Prerequisites
 
@@ -20,9 +20,10 @@ now, or take a named placeholder (`REPLACE_GITLAB_TOKEN`, `REPLACE_DISCORD_BOT_T
 to fill into the file by hand afterwards — placeholders keep tokens out of the
 conversation log.
 
-Claude authentication needs nothing collected: it is a one-time OAuth login the
-operator performs by attaching to the agent's tmux session after the script runs —
-say so when they ask where the "claude token" goes.
+Claude authentication needs nothing collected per agent: the script injects the
+fleet token from `secrets/claude-token` at launch. Check the file exists; if not,
+the operator mints it once with `! sudo ./scripts/setup-claude-token.sh` (see
+§ Claude in prerequisites.md) — say so when they ask where the "claude token" goes.
 
 Done when every checklist item has either a value or a named placeholder.
 
@@ -67,10 +68,7 @@ the agent's `fleet.yaml` entry and saved the bot invite URL to
 
 ## 5 · Hand off
 
-Two acts remain the operator's; close by printing them concretely:
-
-1. The first-run login: `sudo -u agent-<name> tmux attach -t <name>`, complete the
-   Claude OAuth prompt inside the session, detach with `Ctrl-b d`. If the script
-   warned that the plugin install was skipped, rerun it after the login.
-2. The test: mention the bot in its Discord channel and get an answer. Peek at the
-   session with `sudo -u agent-<name> tmux capture-pane -pt <name> | tail -20`.
+One act remains the operator's; close by printing it concretely: mention the bot
+in its Discord channel and get an answer. Peek at the session yourself with
+`sudo -u agent-<name> tmux capture-pane -pt <name> | tail -20` to confirm it came
+up authenticated (no login prompt).
