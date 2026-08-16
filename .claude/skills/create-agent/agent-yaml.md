@@ -16,7 +16,7 @@ One file = one agent. Contains secrets: `chmod 600`, never commit. Consumed by
 | `gitlab.repo` | SSH clone URL; cloned to `~/projects/<repo>`, which is also the launch cwd |
 | `gitlab.token` | PAT, scopes `api` + `write_repository` |
 | `discord.bot_token` | From portal Reset Token → `~/.claude/channels/discord/.env` (agent-owned 0600) |
-| `discord.application_id` | Used only to print the bot invite URL |
+| `discord.application_id` | Used only for the bot invite URL, saved to `agents/<name>/invite-url.txt` |
 | `discord.guild_id` | The server's snowflake |
 | `discord.operator_user_id` | Your snowflake → `access.json` `allowFrom`, `dmPolicy: allowlist` |
 | `discord.channels[]` | `id` (channel snowflake) + `require_mention` (default `true`) |

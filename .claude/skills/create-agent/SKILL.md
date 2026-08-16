@@ -1,12 +1,12 @@
 ---
 name: create-agent
-description: Interview the operator and produce a ready-to-run agent.yaml for create-agent.sh, walking them through the Discord and GitLab prerequisites first.
+description: Interview the operator and produce a ready-to-run agents/<name>/agent.yaml for scripts/create-agent.sh, walking them through the Discord and GitLab prerequisites first.
 disable-model-invocation: true
 ---
 
-Produce one `<name>.agent.yaml` — the single self-contained file `create-agent.sh`
-turns into a running, Discord-connected Claude agent on this VM — then run the
-script yourself and drive it to green. Only root operators work in this session,
+Produce one `agents/<name>/agent.yaml` — the single self-contained recipe
+`scripts/create-agent.sh` turns into a running, Discord-connected Claude agent on
+this VM — then run the script yourself and drive it to green. Only root operators work in this session,
 so provisioning is yours end to end; the operator's own hands are needed just
 twice: filling placeholders, and the OAuth login inside tmux (interactive — a
 terminal you cannot attach).
@@ -43,9 +43,9 @@ Done when the frontier is empty and the operator confirms the identity reads rig
 
 ## 3 · Write
 
-Write `<name>.agent.yaml` in the repo root following the schema and example in
-[`agent-yaml.md`](agent-yaml.md), then `chmod 600` it. Verify every schema field is
-present and list any placeholders still unfilled.
+Write `agents/<name>/agent.yaml` (create the folder) following the schema and
+example in [`agent-yaml.md`](agent-yaml.md), then `chmod 600` it. Verify every
+schema field is present and list any placeholders still unfilled.
 
 ## 4 · Run
 
@@ -53,7 +53,7 @@ Once every placeholder is filled (ask the operator to fill any that remain first
 run the script yourself:
 
 ```bash
-sudo ./create-agent.sh <name>.agent.yaml
+sudo ./scripts/create-agent.sh <name>
 ```
 
 When it fails, fix the cause here — a missing host package, a bad field, a network
@@ -61,7 +61,9 @@ hiccup — and rerun; the script is rerunnable and keeps what already succeeded.
 the fix belongs to every future agent (a prerequisite the script should install
 itself), patch `create-agent.sh`, not just the host.
 
-Done when the script prints its summary block.
+Done when the script prints its summary block. On success it has also upserted
+the agent's `fleet.yaml` entry and saved the bot invite URL to
+`agents/<name>/invite-url.txt` — point the operator there.
 
 ## 5 · Hand off
 

@@ -51,7 +51,7 @@ while IFS=$'\t' read -r name status created purpose; do
     drift+=("$name is active in the registry but unix user $user is missing — rerun create-agent.sh $name or delete-agent.sh $name")
   fi
   if [[ $status == retired ]] && $user_exists; then
-    drift+=("$name is retired in the registry but unix user $user still exists — delete-agent.sh was bypassed?")
+    drift+=("$name is retired in the registry but unix user $user still exists — run delete-agent.sh $name to destroy the leftover user")
   fi
   [[ -f $ROOT/agents/$name/agent.yaml ]] \
     || drift+=("$name has no recipe at agents/$name/agent.yaml — restore it from /home/$user/agent.yaml")

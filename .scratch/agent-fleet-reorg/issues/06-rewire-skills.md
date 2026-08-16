@@ -1,7 +1,7 @@
 # 06 — Rewire the four skills onto the scripts
 
 Type: task
-Status: open
+Status: resolved
 Blocked by: 02, 03, 04, 05
 
 ## Question
@@ -26,3 +26,18 @@ Make each skill a thin wrapper over its script (invoke
 
 Done when the four SKILL.md files reference only name-based script calls and
 no skill contains shell logic a script owns.
+
+## Answer
+
+Done 2026-08-16. create-agent SKILL.md now writes `agents/<name>/agent.yaml`
+and runs `sudo ./scripts/create-agent.sh <name>` (§4 also points at the
+registry upsert and `agents/<name>/invite-url.txt`); update-agent SKILL.md
+rewritten — §1 picks the agent via `sudo ./scripts/list-agent.sh` (ad-hoc
+getent/tmux commands gone), recipe path and apply command updated; new
+list-agent and delete-agent skills created, both `disable-model-invocation:
+true`, both thin wrappers (delete uses `--yes` backed by an explicit chat
+confirmation, since the script's interactive prompt can't be answered from a
+session). agent-yaml.md's invite-URL row points at the new file location.
+Deviation found and fixed while mapping drift flags to fixes: delete-agent.sh
+refused the retired-but-user-exists drift case — it now destroys the leftover
+user (drift repair), and list-agent.sh's flag names that fix.

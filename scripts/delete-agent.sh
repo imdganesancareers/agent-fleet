@@ -35,7 +35,8 @@ AGENT="agent-$CLI_NAME"
 id -u "$AGENT" >/dev/null 2>&1 || die "no unix user $AGENT — nothing to destroy (drift? see list-agent.sh)"
 status=$(python3 "$SCRIPT_DIR/fleet-registry.py" "$FLEET" get "$CLI_NAME" status 2>/dev/null) \
   || die "no fleet.yaml entry for $CLI_NAME — that's drift; see list-agent.sh"
-[[ $status == active ]] || die "$CLI_NAME is already retired in the registry — the leftover user is drift; see list-agent.sh"
+[[ $status == active ]] \
+  || log "registry already says retired — destroying the leftover user (drift repair)"
 
 echo "This will DESTROY:"
 echo "  - tmux session '$CLI_NAME' (in-flight work dies with it)"
@@ -57,8 +58,10 @@ userdel -r "$AGENT" 2>&1 | grep -v 'mail spool' || true   # spool warning is noi
 id -u "$AGENT" >/dev/null 2>&1 && die "userdel failed — $AGENT still exists"
 ok " user, home, and session gone"
 
-python3 "$SCRIPT_DIR/fleet-registry.py" "$FLEET" retire "$CLI_NAME"
-ok " fleet.yaml entry marked retired"
+if [[ $status == active ]]; then
+  python3 "$SCRIPT_DIR/fleet-registry.py" "$FLEET" retire "$CLI_NAME"
+  ok " fleet.yaml entry marked retired"
+fi
 
 echo
 log "$CLI_NAME retired. Manual cleanup this script cannot do:"

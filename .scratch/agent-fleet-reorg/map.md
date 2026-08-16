@@ -48,6 +48,11 @@ agent data out of the future `agent-fleet` git repo. Done when `sudo
 - [03 — Write list-agent.sh](issues/03-write-list-agent-sh.md) — fleet table + drift doctor, exit 1 on drift; verified live, drift-free
 - [04 — Rework update-agent.sh](issues/04-rework-update-agent-sh.md) — name-based CLI, refreshes the registry purpose on identity edits
 - [05 — Write delete-agent.sh](issues/05-write-delete-agent-sh.md) — type-name confirm / `--yes`, retires the entry, keeps the recipe, prints manual-cleanup checklist
+- [06 — Rewire the four skills](issues/06-rewire-skills.md) — all four skills are thin wrappers over name-based script calls; delete-agent.sh gained drift repair for the retired-but-user-exists case
+- [07 — Verify the fleet end to end](issues/07-verify-fleet-end-to-end.md) — create rerun green, registry dates preserved, fleet drift-free before and after; only the operator's Discord mention test remains
+
+**Destination reached** (2026-08-16): no open tickets. The operator's live
+Discord test is the closing hand-off.
 
 ## Not yet specified
 
