@@ -40,6 +40,17 @@ unfinished interview. Seed guardrails from the defaults in
 [`agent-yaml.md`](agent-yaml.md) § Guardrails and grill for agent-specific additions;
 the ask-in-Discord-before-disruptive rule is non-negotiable and stays in verbatim.
 
+Then two more interview stops, always asked:
+
+- **Fleet skills** — list the dirs under `skills/` in this repo and ask which
+  this agent is granted (e.g. does it need to dockerize/run/verify apps? →
+  `dockerize-and-verify`). Granted names go in the `skills:` list; none is a
+  fine answer.
+- **Enforced guardrails** — walk the prose guardrails just written and ask
+  which must be *impossible*, not just discouraged (git pushes for a read-only
+  agent, MR approval, sudo). Author them as `enforced:` entries per
+  [`agent-yaml.md`](agent-yaml.md) § Enforced guardrails.
+
 Done when the frontier is empty and the operator confirms the identity reads right.
 
 ## 3 · Write

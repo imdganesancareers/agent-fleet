@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/etc/claude-code/hooks/fleet-guard.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/etc/claude-code/hooks/fleet-identity.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

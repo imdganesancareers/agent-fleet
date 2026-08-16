@@ -24,6 +24,8 @@ SECRETS="$ROOT/secrets"
 TOKEN_FILE="$SECRETS/claude-token"
 
 [[ $EUID -eq 0 ]] || die "must run as root"
+# sudo's secure_path drops root's ~/.local/bin, where the native installer puts claude
+export PATH="/root/.local/bin:$PATH"
 command -v claude >/dev/null \
   || die "claude CLI not found for root — install it: curl -fsSL https://claude.ai/install.sh | bash"
 [[ -t 0 ]] || die "needs an interactive terminal (browser authorize + paste-code)"
@@ -38,9 +40,23 @@ log "your browser (you are the account), and paste the code back when prompted"
 echo
 claude setup-token || die "claude setup-token failed"
 echo
-read -rsp "paste the minted token here (sk-ant-oat…): " TOKEN
-echo
-[[ $TOKEN == sk-ant-oat* ]] || die "that does not look like a Claude OAuth token (expected sk-ant-oat…) — nothing stored"
+log "the token is the long sk-ant-oat… string printed above — not the browser code"
+TOKEN=""
+for _attempt in 1 2 3; do
+  # visible on purpose: setup-token already printed the token in plaintext
+  # above, and a hidden prompt gives no feedback that the paste landed
+  read -rp "paste the minted token here (sk-ant-oat…): " RAW
+  # pastes arrive messy: strip whitespace/CR, quotes, and any copied label
+  # like "Token: " by keeping everything from sk-ant-oat onward
+  CLEAN=$(printf '%s' "$RAW" | tr -d '[:space:]"'\''')
+  if [[ $CLEAN == *sk-ant-oat* ]]; then
+    TOKEN="sk-ant-oat${CLEAN#*sk-ant-oat}"
+    break
+  fi
+  printf '\033[1;31mfail\033[0m got %d chars starting %.8s… — no sk-ant-oat prefix found, try again\n' \
+    "${#CLEAN}" "$CLEAN" >&2
+done
+[[ -n $TOKEN ]] || die "no valid token after 3 attempts — nothing stored"
 
 umask 077
 printf '%s\n' "$TOKEN" > "$TOKEN_FILE"

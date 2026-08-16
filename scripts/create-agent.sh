@@ -41,19 +41,28 @@ log "host prerequisites"
 missing=()
 for p in tmux git curl unzip; do command -v "$p" >/dev/null || missing+=("$p"); done
 python3 -c 'import yaml' 2>/dev/null || missing+=(python3-yaml)
+# rootless container runtime — fleet infrastructure for every agent (see
+# .scratch/agent-runtime-and-guardrails/issues/02): podman answers as `docker`
+command -v podman >/dev/null || missing+=(podman podman-docker uidmap slirp4netns passt catatonit)
+command -v podman-compose >/dev/null || missing+=(podman-compose)
 if ((${#missing[@]})); then
   apt-get update -qq
   apt-get install -y -qq "${missing[@]}"
 fi
-ok " tmux, git, curl, unzip, python3(+yaml)"
+touch /etc/containers/nodocker   # silence the "Emulate Docker CLI" notice
+ok " tmux, git, curl, unzip, python3(+yaml), podman(+docker shim, compose)"
+
+# machine-wide enforcement layer: managed-settings hooks + per-agent policy dir
+"$SCRIPT_DIR/install-enforcement.sh" >/dev/null
+ok " enforcement layer (/etc/claude-code) current"
 
 # ---------- parse agent.yaml, validate, render config files ----------
 STAGE=$(mktemp -d); chmod 700 "$STAGE"; trap 'rm -rf "$STAGE"' EXIT
 
-python3 - "$YAML" "$STAGE" "$CLI_NAME" <<'PY' || die "agent.yaml invalid"
-import json, re, sys, yaml
+python3 - "$YAML" "$STAGE" "$CLI_NAME" "$ROOT" <<'PY' || die "agent.yaml invalid"
+import json, os, re, sys, yaml
 
-path, stage, cli_name = sys.argv[1], sys.argv[2], sys.argv[3]
+path, stage, cli_name, root = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cfg = yaml.safe_load(open(path))
 
 def get(d, dotted, req=True):
@@ -122,6 +131,34 @@ open(f"{stage}/access.json", 'w').write(json.dumps(access, indent=2) + "\n")
 open(f"{stage}/settings.json", 'w').write(json.dumps(
     {"skipDangerousModePermissionPrompt": True}, indent=2) + "\n")
 
+# --- fleet skills: names must exist as skills/<name>/SKILL.md in this repo ---
+skills = cfg.get('skills') or []
+if not isinstance(skills, list):
+    sys.exit("skills must be a list of fleet skill names")
+for s in skills:
+    if not re.fullmatch(r'[a-z][a-z0-9-]*', str(s)):
+        sys.exit(f"bad skill name: {s}")
+    if not os.path.isfile(f"{root}/skills/{s}/SKILL.md"):
+        sys.exit(f"unknown fleet skill: {s} (no skills/{s}/SKILL.md)")
+open(f"{stage}/skills.list", 'w').write("".join(s + "\n" for s in skills))
+
+# --- enforced: hard guardrails compiled to fleet-guard policy ---
+rules = cfg.get('enforced') or []
+if not isinstance(rules, list):
+    sys.exit("enforced must be a list of {tools, pattern, reason}")
+for i, r in enumerate(rules):
+    if not isinstance(r, dict) or not r.get('pattern') or not r.get('reason'):
+        sys.exit(f"enforced[{i}] needs pattern + reason")
+    try:
+        re.compile(r['pattern'])
+    except re.error as e:
+        sys.exit(f"enforced[{i}].pattern is not a valid regex: {e}")
+    tools = r.get('tools') or ['*']
+    if not isinstance(tools, list) or not all(isinstance(t, str) for t in tools):
+        sys.exit(f"enforced[{i}].tools must be a list of tool names")
+    r['tools'] = tools
+open(f"{stage}/policy.json", 'w').write(json.dumps({"rules": rules}, indent=2) + "\n")
+
 open(f"{stage}/discord.env", 'w').write(
     f"DISCORD_BOT_TOKEN={get(cfg, 'discord.bot_token')}\n"
     "DISCORD_ACCESS_MODE=static\n")
@@ -130,6 +167,11 @@ disp = get(cfg, 'persona.display_name')
 pron = get(cfg, 'persona.pronouns', req=False) or 'they/them'
 emoji = get(cfg, 'persona.emoji', req=False) or ''
 home_chat = str(channels[0]['id'])
+skills_md = ""
+if skills:
+    skills_md = ("\n## Fleet skills granted\n\nInstalled at `~/.claude/skills` "
+                 "— invoke the matching skill when the task fits:\n"
+                 + "".join(f"- {s}\n" for s in skills))
 open(f"{stage}/CLAUDE.md", 'w').write(f"""# {disp} {emoji} — agent-{name}
 
 You are {disp} ({pron}), an autonomous Claude agent running as unix user
@@ -151,7 +193,7 @@ minutes, post a progress update there.
 {get(cfg, 'soul').strip()}
 
 {get(cfg, 'guardrails').strip()}
-""")
+{skills_md}""")
 PY
 source "$STAGE/env.sh"
 
@@ -168,6 +210,10 @@ else
   ok " created user $AGENT"
 fi
 chmod 750 "$HOME_DIR"
+# lingering keeps /run/user/<uid> alive for rootless podman under runuser -l
+# (empty XDG_RUNTIME_DIR there), and keeps agent containers running unattended
+loginctl enable-linger "$AGENT" 2>/dev/null || true
+ok " lingering enabled (rootless containers)"
 
 # ---------- skeleton + PATH ----------
 as_agent 'mkdir -p ~/.local/bin ~/projects ~/.ssh ~/.claude/channels/discord && chmod 700 ~/.ssh'
@@ -244,6 +290,25 @@ install -o root -g root -m 0444 "$STAGE/settings.json"  "$HOME_DIR/.claude/setti
 install -o root -g root -m 0400 "$YAML"                 "$HOME_DIR/agent.yaml"
 ok " identity rendered (CLAUDE.md, settings.json, agent.yaml archive — root-owned)"
 
+# ---------- fleet skills (root-owned, reconciled) + enforced policy ----------
+rm -rf "$HOME_DIR/.claude/skills"
+if [[ -s $STAGE/skills.list ]]; then
+  while IFS= read -r s; do
+    [[ $s ]] || continue
+    while IFS= read -r f; do
+      install -D -o root -g root -m 0444 "$f" "$HOME_DIR/.claude/skills/$s/${f#"$ROOT/skills/$s/"}"
+    done < <(find "$ROOT/skills/$s" -type f)
+  done < "$STAGE/skills.list"
+  ok " fleet skills rendered: $(tr '\n' ' ' < "$STAGE/skills.list")"
+fi
+POLICY_DST="/etc/claude-code/fleet-policy/$AGENT.json"
+if [[ $(python3 -c "import json;print(len(json.load(open('$STAGE/policy.json'))['rules']))") != 0 ]]; then
+  install -o root -g root -m 0644 "$STAGE/policy.json" "$POLICY_DST"
+  ok " enforced policy installed ($POLICY_DST)"
+else
+  rm -f "$POLICY_DST"
+fi
+
 # ---------- claude auth: the fleet's shared OAuth token ----------
 # One account-wide token (see docs/adr/0001) injected as CLAUDE_CODE_OAUTH_TOKEN
 # at launch — agents never do their own OAuth login. Existence checked at startup.
@@ -266,10 +331,14 @@ data = {}
 if os.path.exists(path):
     data = json.load(open(path))
 data.setdefault("projects", {}).setdefault(project, {})["hasTrustDialogAccepted"] = True
+# first-run wizard (theme/login chooser) would otherwise block the headless
+# tmux session; the fleet token authenticates, so onboarding has nothing to ask
+data["hasCompletedOnboarding"] = True
+data.setdefault("theme", "dark")
 json.dump(data, open(path, "w"), indent=2)
 PY
 chown "$AGENT:$AGENT" "$HOME_DIR/.claude.json"
-ok " trust accepted for $REPO_PATH"
+ok " trust accepted for $REPO_PATH (onboarding pre-completed)"
 
 if grep -qs "\"projectPath\": \"$REPO_PATH\"" "$HOME_DIR/.claude/plugins/installed_plugins.json"; then
   ok " discord plugin installed for $REPO_PATH"

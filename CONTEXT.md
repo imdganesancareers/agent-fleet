@@ -33,3 +33,13 @@ docs use these words exactly.
   or repairs it silently.
 - **Operator** — the root human driving this repo's sessions. Only root
   operators use this repo.
+- **Agent skill** — a fleet-authored Claude Code skill granted to an agent in
+  its agent.yaml; part of the agent's identity alongside persona, soul, and
+  guardrails. Authored once in this repo, rendered into each granted agent.
+- **Enforced guardrail** — an agent.yaml `enforced` rule compiled into the
+  machine-wide fleet-guard policy: violating it is impossible, not merely
+  discouraged, in every session of that agent's unix user. Prose guardrails
+  guide judgment; enforced guardrails deny.
+- **Project knowledge** — what an agent has learned about building and running
+  a repo (how it builds, how it runs, its quirks). Agent-private, lives in the
+  agent's home, survives sessions, dies with retirement.

@@ -6,3 +6,7 @@ agents/
 
 # Fleet-level secrets (shared Claude OAuth token)
 secrets/
+
+# Working scratch — wayfinder maps, backups, session notes (aruvii-project
+# specific; never part of the fleet tooling)
+.scratch/

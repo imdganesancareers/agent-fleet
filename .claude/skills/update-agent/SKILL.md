@@ -1,16 +1,17 @@
 ---
 name: update-agent
-description: Update one agent's identity — soul and persona for now — by editing agents/<name>/agent.yaml and applying it with scripts/update-agent.sh.
+description: Update one agent's identity — persona, soul, guardrails, granted fleet skills, enforced rules — by editing agents/<name>/agent.yaml and applying it with scripts/update-agent.sh.
 disable-model-invocation: true
 ---
 
-This skill updates an agent's **identity — soul and persona, for now** — by
-editing its recipe `agents/<name>/agent.yaml` and running
-`scripts/update-agent.sh`, which re-renders the agent's `CLAUDE.md`, refreshes
-its registry purpose line, and restarts its session, touching nothing else.
-Only root operators work in this session, so you run the script yourself. Any
-other field (tokens, Discord access, repo, git identity) is `create-agent.sh`
-territory — say so and stop.
+This skill updates an agent's **identity — persona, soul, guardrails, granted
+fleet `skills`, and `enforced` rules** — by editing its recipe
+`agents/<name>/agent.yaml` and running `scripts/update-agent.sh`, which
+re-renders the agent's `CLAUDE.md`, reconciles its rendered skills and its
+fleet-guard policy, refreshes its registry purpose line, and restarts its
+session, touching nothing else. Only root operators work in this session, so
+you run the script yourself. Any other field (tokens, Discord access, repo,
+git identity) is `create-agent.sh` territory — say so and stop.
 
 ## 1 · Pick the agent
 
@@ -23,11 +24,14 @@ the running agent was provisioned from.
 
 ## 2 · Interview the change
 
-Ask what should change in the soul or persona. Schema:
+Ask what should change in the soul, persona, guardrails, granted `skills`, or
+`enforced` rules. Schema:
 [`../create-agent/agent-yaml.md`](../create-agent/agent-yaml.md). The
 create-agent interview bar still applies: a soul stays multi-paragraph (role,
-process, tone, ownership). Grill until the operator confirms the revised text
-reads right, then edit only those fields in the YAML.
+process, tone, ownership); a skill grant that contradicts the soul means the
+soul changes too, in the same update; enforced rules follow § Enforced
+guardrails. Grill until the operator confirms the revised text reads right,
+then edit only those fields in the YAML.
 
 One field is never an update: **`name`** keys everything — a new name provisions
 a second agent and leaves the old user, session, and home behind. Renaming =

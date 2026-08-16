@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# update-agent.sh — apply identity-only changes from agents/<name>/agent.yaml to
-# an already-provisioned agent: re-render CLAUDE.md (persona, purpose, soul,
-# guardrails), refresh the archived YAML and the registry's purpose line,
-# restart the tmux session.
+# update-agent.sh — apply identity changes from agents/<name>/agent.yaml to an
+# already-provisioned agent: re-render CLAUDE.md (persona, purpose, soul,
+# guardrails, granted fleet skills), reconcile the rendered skills and the
+# enforced fleet-guard policy, refresh the archived YAML and the registry's
+# purpose line, restart the tmux session.
 #
 #   sudo ./scripts/update-agent.sh <name>
 #
@@ -32,10 +33,10 @@ YAML="$ROOT/agents/$CLI_NAME/agent.yaml"
 # ---------- parse identity fields, render CLAUDE.md ----------
 STAGE=$(mktemp -d); chmod 700 "$STAGE"; trap 'rm -rf "$STAGE"' EXIT
 
-python3 - "$YAML" "$STAGE" "$CLI_NAME" <<'PY' || die "agent.yaml invalid"
-import re, sys, yaml
+python3 - "$YAML" "$STAGE" "$CLI_NAME" "$ROOT" <<'PY' || die "agent.yaml invalid"
+import json, os, re, sys, yaml
 
-path, stage, cli_name = sys.argv[1], sys.argv[2], sys.argv[3]
+path, stage, cli_name, root = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cfg = yaml.safe_load(open(path))
 
 def get(d, dotted, req=True):
@@ -71,11 +72,43 @@ with open(f"{stage}/env.sh", 'w') as f:
                  'DISPLAY_NAME': get(cfg, 'persona.display_name')}.items():
         f.write(f"{k}={shq(v)}\n")
 
+# --- fleet skills + enforced policy: keep in sync with create-agent.sh ---
+skills = cfg.get('skills') or []
+if not isinstance(skills, list):
+    sys.exit("skills must be a list of fleet skill names")
+for s in skills:
+    if not re.fullmatch(r'[a-z][a-z0-9-]*', str(s)):
+        sys.exit(f"bad skill name: {s}")
+    if not os.path.isfile(f"{root}/skills/{s}/SKILL.md"):
+        sys.exit(f"unknown fleet skill: {s} (no skills/{s}/SKILL.md)")
+open(f"{stage}/skills.list", 'w').write("".join(s + "\n" for s in skills))
+
+rules = cfg.get('enforced') or []
+if not isinstance(rules, list):
+    sys.exit("enforced must be a list of {tools, pattern, reason}")
+for i, r in enumerate(rules):
+    if not isinstance(r, dict) or not r.get('pattern') or not r.get('reason'):
+        sys.exit(f"enforced[{i}] needs pattern + reason")
+    try:
+        re.compile(r['pattern'])
+    except re.error as e:
+        sys.exit(f"enforced[{i}].pattern is not a valid regex: {e}")
+    tools = r.get('tools') or ['*']
+    if not isinstance(tools, list) or not all(isinstance(t, str) for t in tools):
+        sys.exit(f"enforced[{i}].tools must be a list of tool names")
+    r['tools'] = tools
+open(f"{stage}/policy.json", 'w').write(json.dumps({"rules": rules}, indent=2) + "\n")
+
 # --- CLAUDE.md template: keep in sync with create-agent.sh ---
 disp = get(cfg, 'persona.display_name')
 pron = get(cfg, 'persona.pronouns', req=False) or 'they/them'
 emoji = get(cfg, 'persona.emoji', req=False) or ''
 home_chat = str(channels[0]['id'])
+skills_md = ""
+if skills:
+    skills_md = ("\n## Fleet skills granted\n\nInstalled at `~/.claude/skills` "
+                 "— invoke the matching skill when the task fits:\n"
+                 + "".join(f"- {s}\n" for s in skills))
 open(f"{stage}/CLAUDE.md", 'w').write(f"""# {disp} {emoji} — agent-{name}
 
 You are {disp} ({pron}), an autonomous Claude agent running as unix user
@@ -97,7 +130,7 @@ minutes, post a progress update there.
 {get(cfg, 'soul').strip()}
 
 {get(cfg, 'guardrails').strip()}
-""")
+{skills_md}""")
 PY
 source "$STAGE/env.sh"
 
@@ -118,6 +151,27 @@ install -o root -g root -m 0444 "$STAGE/CLAUDE.md" "$HOME_DIR/.claude/CLAUDE.md"
 install -o root -g root -m 0400 "$YAML"            "$HOME_DIR/agent.yaml"
 python3 "$SCRIPT_DIR/fleet-registry.py" "$FLEET" set-purpose "$NAME" --purpose-from "$YAML"
 ok " identity applied (CLAUDE.md re-rendered, archive + registry purpose refreshed)"
+
+# ---------- enforcement layer, fleet skills, enforced policy, lingering ----------
+"$SCRIPT_DIR/install-enforcement.sh" >/dev/null
+loginctl enable-linger "$AGENT" 2>/dev/null || true
+rm -rf "$HOME_DIR/.claude/skills"
+if [[ -s $STAGE/skills.list ]]; then
+  while IFS= read -r s; do
+    [[ $s ]] || continue
+    while IFS= read -r f; do
+      install -D -o root -g root -m 0444 "$f" "$HOME_DIR/.claude/skills/$s/${f#"$ROOT/skills/$s/"}"
+    done < <(find "$ROOT/skills/$s" -type f)
+  done < "$STAGE/skills.list"
+  ok " fleet skills rendered: $(tr '\n' ' ' < "$STAGE/skills.list")"
+fi
+POLICY_DST="/etc/claude-code/fleet-policy/$AGENT.json"
+if [[ $(python3 -c "import json;print(len(json.load(open('$STAGE/policy.json'))['rules']))") != 0 ]]; then
+  install -o root -g root -m 0644 "$STAGE/policy.json" "$POLICY_DST"
+  ok " enforced policy installed ($POLICY_DST)"
+else
+  rm -f "$POLICY_DST"
+fi
 
 # ---------- relaunch so the new identity loads ----------
 install -o "$AGENT" -g "$AGENT" -m 0400 "$CLAUDE_TOKEN_FILE" "$HOME_DIR/.claude/claude-token"

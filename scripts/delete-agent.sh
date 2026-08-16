@@ -51,12 +51,16 @@ fi
 
 log "destroying $AGENT"
 runuser -u "$AGENT" -- tmux -f /dev/null kill-server 2>/dev/null || true
+# rootless containers die with the user's processes; linger + fleet policy are
+# host-side state the userdel below does not touch
+loginctl disable-linger "$AGENT" 2>/dev/null || true
+rm -f "/etc/claude-code/fleet-policy/$AGENT.json"
 pkill -u "$AGENT" 2>/dev/null || true
 sleep 1
 pkill -9 -u "$AGENT" 2>/dev/null || true
 userdel -r "$AGENT" 2>&1 | grep -v 'mail spool' || true   # spool warning is noise
 id -u "$AGENT" >/dev/null 2>&1 && die "userdel failed — $AGENT still exists"
-ok " user, home, and session gone"
+ok " user, home, session, containers, linger, and fleet policy gone"
 
 if [[ $status == active ]]; then
   python3 "$SCRIPT_DIR/fleet-registry.py" "$FLEET" retire "$CLI_NAME"

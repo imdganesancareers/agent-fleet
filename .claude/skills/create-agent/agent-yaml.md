@@ -12,6 +12,8 @@ One file = one agent. Contains secrets: `chmod 600`, never commit. Consumed by
 | `purpose` | One paragraph: what this agent is for |
 | `soul` | Multi-paragraph markdown: role, process, tone, ownership |
 | `guardrails` | Multi-paragraph markdown; starts from the defaults below |
+| `skills` | Optional list of fleet skill names (dirs under `skills/` in this repo); rendered root-owned into the agent's `~/.claude/skills` and advertised in its CLAUDE.md |
+| `enforced` | Optional list of hard guardrails `{tools, pattern, reason}`; compiled to `/etc/claude-code/fleet-policy/agent-<name>.json` for the machine-wide fleet-guard hook (see below) |
 | `git.author_name` / `.author_email` | Commit identity (`git config --global`) |
 | `gitlab.repo` | SSH clone URL; cloned to `~/projects/<repo>`, which is also the launch cwd |
 | `gitlab.token` | PAT, scopes `api` + `write_repository` |
@@ -43,6 +45,12 @@ soul: |
   Direct, brief, no filler...
 guardrails: |
   # (defaults below, plus agent-specific additions)
+skills:
+  - dockerize-and-verify
+enforced:
+  - tools: [Bash]
+    pattern: '(^|[\s;&|])sudo\s'
+    reason: "No sudo, ever — toolchains install into $HOME."
 git:
   author_name: "Ganesan"
   author_email: "imdganesan.careers@gmail.com"
@@ -86,3 +94,24 @@ channel in `discord.channels` is the home channel.)
   truly needs root, say so in your channel and stop.
 - Stay inside ~/projects/<repo>. Other agents' homes and the host are not yours.
 ```
+
+## Enforced guardrails
+
+Prose guardrails guide judgment; `enforced` entries are deterministic. Each is
+compiled by the lifecycle scripts into the agent's fleet-guard policy, and the
+machine-wide PreToolUse hook (wired via `/etc/claude-code/managed-settings.json`,
+sources in `enforcement/`) denies any matching tool call — **even under
+`--dangerously-skip-permissions`, in subagents, and in `claude -p` runs**.
+
+- `tools`: list of tool names (`Bash`, `Edit`, `Write`, …) or `['*']` (default)
+- `pattern`: a Python regex, matched against `<tool_name> <tool_input as JSON>`
+- `reason`: shown to the agent when the call is denied
+
+Graduate a rule from prose to `enforced` when violating it must be impossible,
+not merely discouraged: git/MR write bans for read-only agents, `sudo`, approval
+gates. Keep patterns narrow — a false positive blocks legitimate work; matching
+against JSON means quotes and escapes are part of the haystack.
+
+The lingering + rootless container runtime and the SessionStart re-injection
+hook (identity survives compaction) need nothing in this file — every agent
+gets them from the lifecycle scripts.
