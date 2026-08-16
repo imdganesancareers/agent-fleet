@@ -1,0 +1,5 @@
+# Agent data — recipes hold live credentials (GitLab PAT, Discord bot token).
+# Never commit, in the new layout or the old flat one.
+agents/
+*.agent.yaml
+*.invite-url.txt
