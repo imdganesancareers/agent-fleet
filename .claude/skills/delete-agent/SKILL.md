@@ -6,21 +6,22 @@ disable-model-invocation: true
 
 Retiring destroys the agent's tmux session, unix user, and entire home
 (workspace clone, Claude OAuth login, ssh key). It keeps the recipe
-`agents/<name>/` and the `fleet.yaml` entry (marked retired), so
-`scripts/create-agent.sh <name>` can resurrect the agent any time — but the
-OAuth login and ssh-key registration would need redoing.
+`<fleet>/agents/<name>/` and the entry in the fleet's `fleet.yaml` (marked
+retired), so `scripts/create-agent.sh <fleet> <name>` can resurrect the agent
+any time — but the OAuth login and ssh-key registration would need redoing.
 
 ## 1 · Confirm the target
 
-Run `sudo ./scripts/list-agent.sh`, show the target's row, and restate the
-destroy/keep split above. Get the operator's explicit confirmation naming the
-agent — the script's own type-the-name prompt cannot be answered from this
-session, so this chat confirmation stands in for it.
+Ask which fleet if it isn't obvious (fleets live under `$FLEETS_ROOT`, default
+`/root/projects/fleets/`). Run `sudo ./scripts/list-agent.sh <fleet>`, show the
+target's row, and restate the destroy/keep split above. Get the operator's
+explicit confirmation naming the agent — the script's own type-the-name prompt
+cannot be answered from this session, so this chat confirmation stands in for it.
 
 ## 2 · Retire
 
 ```bash
-sudo ./scripts/delete-agent.sh <name> --yes
+sudo ./scripts/delete-agent.sh <fleet> <name> --yes
 ```
 
 `--yes` is justified only by the confirmation you just collected. On failure

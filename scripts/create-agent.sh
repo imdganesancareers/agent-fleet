@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 # create-agent.sh — provision (or reconcile) one Discord-connected Claude Code agent
-# on this VM from its recipe at agents/<name>/agent.yaml.
+# on this VM from its recipe at <fleet>/agents/<name>/agent.yaml.
 #
-#   sudo ./scripts/create-agent.sh <name>
+#   sudo ./scripts/create-agent.sh <fleet> <name>
+#   FLEET=<fleet> sudo ./scripts/create-agent.sh <name>
+#
+# The fleet is a bare name (resolved to $FLEETS_ROOT/<name>, default
+# /root/projects/fleets) or a path containing '/'. A new fleet directory is
+# skeleton-created on first use. Agent names are VM-global: a name claimed by
+# another fleet (or a foreign unix user) is refused.
 #
 # Rerunnable: existing pieces (user, installs, clone, ssh key) are kept, rendered
 # config is refreshed, and the tmux session is always killed and relaunched. On
-# success the agent's fleet.yaml entry is upserted (status active, created date
-# kept on rerun). Author the recipe with the /create-agent skill; schema in
-# .claude/skills/create-agent/agent-yaml.md.
+# success the agent's entry in the fleet's fleet.yaml is upserted (status active,
+# created date kept on rerun). Author the recipe with the /create-agent skill;
+# schema in .claude/skills/create-agent/agent-yaml.md.
 
 set -euo pipefail
 
@@ -22,19 +28,43 @@ die()  { printf '\033[1;31mfail\033[0m %s\n' "$*" >&2; exit 1; }
 
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 ROOT=$(dirname "$SCRIPT_DIR")
-FLEET="$ROOT/fleet.yaml"
+source "$SCRIPT_DIR/fleet-lib.sh"
 
-CLI_NAME=${1:-}
-[[ $CLI_NAME ]] || die "usage: sudo $0 <name>   (reads $ROOT/agents/<name>/agent.yaml)"
+USAGE="usage: sudo $0 <fleet> <name>   (or FLEET=<fleet> sudo $0 <name>)
+  reads <fleet>/agents/<name>/agent.yaml; bare fleet names resolve under FLEETS_ROOT=$FLEETS_ROOT"
+
+fleet_args 1 "$@"
+CLI_NAME=${REST[0]:-}
+[[ $CLI_NAME ]] || die "$USAGE"
 [[ $CLI_NAME =~ ^[a-z][a-z0-9-]{0,19}$ ]] || die "name must be lowercase [a-z][a-z0-9-], max 20 chars"
 [[ $EUID -eq 0 ]] || die "must run as root"
-YAML="$ROOT/agents/$CLI_NAME/agent.yaml"
+
+# fleet skeleton: a new fleet dir is born whole, an old one gets missing pieces
+mkdir -p "$FLEET_DIR/agents" "$FLEET_DIR/docs" "$FLEET_DIR/secrets"
+chmod 700 "$FLEET_DIR/secrets"
+
+YAML="$FLEET_DIR/agents/$CLI_NAME/agent.yaml"
 [[ -f $YAML ]] || die "no recipe at $YAML — author it with the /create-agent skill"
 chmod 600 "$YAML"
 # fail fast: the launch is impossible without the fleet's shared Claude token
-CLAUDE_TOKEN_FILE="$ROOT/secrets/claude-token"
+CLAUDE_TOKEN_FILE="$FLEET_DIR/secrets/claude-token"
 [[ -s $CLAUDE_TOKEN_FILE ]] \
-  || die "no fleet Claude token at secrets/claude-token — mint it once with: sudo $SCRIPT_DIR/setup-claude-token.sh"
+  || die "no Claude token at $FLEET_DIR/secrets/claude-token — mint it once with: sudo $SCRIPT_DIR/setup-claude-token.sh $FLEET_SPEC"
+
+# agent names are VM-global (one unix user, one tmux session namespace):
+# refuse a name that another fleet's registry already claims, or a unix user
+# this fleet's registry doesn't know about
+for reg in "$FLEETS_ROOT"/*/fleet.yaml; do
+  [[ -f $reg ]] || continue
+  [[ $(readlink -m "$reg") == "$(readlink -m "$REGISTRY")" ]] && continue
+  if python3 "$SCRIPT_DIR/fleet-registry.py" "$reg" get "$CLI_NAME" status >/dev/null 2>&1; then
+    die "agent name '$CLI_NAME' is already registered by fleet $(dirname "$reg") — agent names are VM-global"
+  fi
+done
+if id -u "agent-$CLI_NAME" >/dev/null 2>&1 \
+   && ! python3 "$SCRIPT_DIR/fleet-registry.py" "$REGISTRY" get "$CLI_NAME" status >/dev/null 2>&1; then
+  die "unix user agent-$CLI_NAME exists but is not in this fleet's registry — claimed elsewhere; pick another name"
+fi
 
 # ---------- host prerequisites (the only apt step) ----------
 log "host prerequisites"
@@ -360,15 +390,15 @@ as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_T
 ok " session '$NAME' running as $AGENT in $REPO_PATH (authenticated via fleet token)"
 
 # ---------- registry ----------
-python3 "$SCRIPT_DIR/fleet-registry.py" "$FLEET" upsert "$NAME" --purpose-from "$YAML"
-ok " fleet.yaml entry upserted ($NAME: active)"
+python3 "$SCRIPT_DIR/fleet-registry.py" "$REGISTRY" upsert "$NAME" --purpose-from "$YAML"
+ok " fleet.yaml entry upserted ($NAME: active in fleet $FLEET_NAME)"
 
 # ---------- summary ----------
 echo
 log "$DISPLAY_NAME is provisioned."
 if [[ -n $APP_ID ]]; then
   INVITE_URL="https://discord.com/api/oauth2/authorize?client_id=$APP_ID&scope=bot&permissions=274878008384"
-  INVITE_FILE="$ROOT/agents/$NAME/invite-url.txt"
+  INVITE_FILE="$FLEET_DIR/agents/$NAME/invite-url.txt"
   printf '%s\n' "$INVITE_URL" > "$INVITE_FILE"
   echo "  bot invite (once per server), saved to $INVITE_FILE:"
   echo "      $INVITE_URL"

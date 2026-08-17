@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# update-agent.sh — apply identity changes from agents/<name>/agent.yaml to an
-# already-provisioned agent: re-render CLAUDE.md (persona, purpose, soul,
+# update-agent.sh — apply identity changes from <fleet>/agents/<name>/agent.yaml
+# to an already-provisioned agent: re-render CLAUDE.md (persona, purpose, soul,
 # guardrails, granted fleet skills), reconcile the rendered skills and the
 # enforced fleet-guard policy, refresh the archived YAML and the registry's
 # purpose line, restart the tmux session.
 #
-#   sudo ./scripts/update-agent.sh <name>
+#   sudo ./scripts/update-agent.sh <fleet> <name>
+#   FLEET=<fleet> sudo ./scripts/update-agent.sh <name>
 #
 # Deliberately narrow for now: tokens, Discord access config, git identity,
 # repo and installs are create-agent.sh's job — rerun that for those fields.
@@ -22,12 +23,17 @@ die()  { printf '\033[1;31mfail\033[0m %s\n' "$*" >&2; exit 1; }
 
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 ROOT=$(dirname "$SCRIPT_DIR")
-FLEET="$ROOT/fleet.yaml"
+source "$SCRIPT_DIR/fleet-lib.sh"
 
-CLI_NAME=${1:-}
-[[ $CLI_NAME ]] || die "usage: sudo $0 <name>   (reads $ROOT/agents/<name>/agent.yaml)"
+USAGE="usage: sudo $0 <fleet> <name>   (or FLEET=<fleet> sudo $0 <name>)
+  reads <fleet>/agents/<name>/agent.yaml; bare fleet names resolve under FLEETS_ROOT=$FLEETS_ROOT"
+
+fleet_args 1 "$@"
+CLI_NAME=${REST[0]:-}
+[[ $CLI_NAME ]] || die "$USAGE"
 [[ $EUID -eq 0 ]] || die "must run as root"
-YAML="$ROOT/agents/$CLI_NAME/agent.yaml"
+[[ -d $FLEET_DIR ]] || die "no fleet directory at $FLEET_DIR"
+YAML="$FLEET_DIR/agents/$CLI_NAME/agent.yaml"
 [[ -f $YAML ]] || die "no recipe at $YAML — run create-agent.sh first"
 
 # ---------- parse identity fields, render CLAUDE.md ----------
@@ -142,14 +148,14 @@ as_agent() { runuser -l "$AGENT" -c "$1"; }
 id -u "$AGENT" >/dev/null 2>&1 || die "no such agent: $AGENT — run create-agent.sh first"
 [[ -d $REPO_PATH ]] || die "workspace $REPO_PATH missing — gitlab.repo changed? that's create-agent.sh's job"
 # fail fast: the relaunch is impossible without the fleet's shared Claude token
-CLAUDE_TOKEN_FILE="$ROOT/secrets/claude-token"
+CLAUDE_TOKEN_FILE="$FLEET_DIR/secrets/claude-token"
 [[ -s $CLAUDE_TOKEN_FILE ]] \
-  || die "no fleet Claude token at secrets/claude-token — mint it once with: sudo $SCRIPT_DIR/setup-claude-token.sh"
+  || die "no Claude token at $FLEET_DIR/secrets/claude-token — mint it once with: sudo $SCRIPT_DIR/setup-claude-token.sh $FLEET_SPEC"
 
 # ---------- apply identity, refresh archive ----------
 install -o root -g root -m 0444 "$STAGE/CLAUDE.md" "$HOME_DIR/.claude/CLAUDE.md"
 install -o root -g root -m 0400 "$YAML"            "$HOME_DIR/agent.yaml"
-python3 "$SCRIPT_DIR/fleet-registry.py" "$FLEET" set-purpose "$NAME" --purpose-from "$YAML"
+python3 "$SCRIPT_DIR/fleet-registry.py" "$REGISTRY" set-purpose "$NAME" --purpose-from "$YAML"
 ok " identity applied (CLAUDE.md re-rendered, archive + registry purpose refreshed)"
 
 # ---------- enforcement layer, fleet skills, enforced policy, lingering ----------

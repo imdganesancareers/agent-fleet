@@ -1,26 +1,29 @@
 ---
 name: update-agent
-description: Update one agent's identity — persona, soul, guardrails, granted fleet skills, enforced rules — by editing agents/<name>/agent.yaml and applying it with scripts/update-agent.sh.
+description: Update one agent's identity — persona, soul, guardrails, granted fleet skills, enforced rules — by editing <fleet>/agents/<name>/agent.yaml and applying it with scripts/update-agent.sh.
 disable-model-invocation: true
 ---
 
 This skill updates an agent's **identity — persona, soul, guardrails, granted
 fleet `skills`, and `enforced` rules** — by editing its recipe
-`agents/<name>/agent.yaml` and running `scripts/update-agent.sh`, which
+`<fleet>/agents/<name>/agent.yaml` and running `scripts/update-agent.sh`, which
 re-renders the agent's `CLAUDE.md`, reconciles its rendered skills and its
 fleet-guard policy, refreshes its registry purpose line, and restarts its
 session, touching nothing else. Only root operators work in this session, so
 you run the script yourself. Any other field (tokens, Discord access, repo,
 git identity) is `create-agent.sh` territory — say so and stop.
 
-## 1 · Pick the agent
+## 1 · Pick the fleet and agent
 
-Run `sudo ./scripts/list-agent.sh` and show the operator the fleet table; the
-target must be an `active` agent. The recipe is `agents/<name>/agent.yaml`; if
-it is missing (list-agent flags this as drift), recover the archive the script
-keeps at `/home/agent-<name>/agent.yaml` (root-owned 0400): copy it back to
-`agents/<name>/agent.yaml`, `chmod 600`, and continue — it is the exact file
-the running agent was provisioned from.
+Ask which fleet if it isn't obvious (fleets live under `$FLEETS_ROOT`, default
+`/root/projects/fleets/`; a spec containing `/` is a verbatim path). Run
+`sudo ./scripts/list-agent.sh <fleet>` and show the operator the fleet table;
+the target must be an `active` agent. The recipe is
+`<fleet>/agents/<name>/agent.yaml`; if it is missing (list-agent flags this as
+drift), recover the archive the script keeps at `/home/agent-<name>/agent.yaml`
+(root-owned 0400): copy it back to `<fleet>/agents/<name>/agent.yaml`,
+`chmod 600`, and continue — it is the exact file the running agent was
+provisioned from.
 
 ## 2 · Interview the change
 
@@ -42,13 +45,13 @@ create the new agent, then retire the old one with `/delete-agent`.
 Run it yourself and drive it to green:
 
 ```bash
-sudo ./scripts/update-agent.sh <name>
+sudo ./scripts/update-agent.sh <fleet> <name>
 ```
 
 It re-renders `CLAUDE.md` from the YAML, refreshes the archived copy and the
-`fleet.yaml` purpose line, and **kills and relaunches** the tmux session —
-in-flight work in the session dies with it; the fleet token is re-injected at
-launch. On failure, fix the cause here and rerun.
+purpose line in the fleet's `fleet.yaml`, and **kills and relaunches** the tmux
+session — in-flight work in the session dies with it; the fleet's token is
+re-injected at launch. On failure, fix the cause here and rerun.
 
 Done when the script prints its summary line. Close with the test: mention the
 bot in its Discord channel and confirm the new identity shows in its reply.

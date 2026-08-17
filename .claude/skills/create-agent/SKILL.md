@@ -1,15 +1,24 @@
 ---
 name: create-agent
-description: Interview the operator and produce a ready-to-run agents/<name>/agent.yaml for scripts/create-agent.sh, walking them through the Discord and GitLab prerequisites first.
+description: Interview the operator and produce a ready-to-run <fleet>/agents/<name>/agent.yaml for scripts/create-agent.sh, walking them through the Discord and GitLab prerequisites first.
 disable-model-invocation: true
 ---
 
-Produce one `agents/<name>/agent.yaml` — the single self-contained recipe
+Produce one `<fleet>/agents/<name>/agent.yaml` — the single self-contained recipe
 `scripts/create-agent.sh` turns into a running, Discord-connected Claude agent on
 this VM — then run the script yourself and drive it to green. Only root operators work in this session,
 so provisioning is yours end to end; the operator's own hands are needed only
 for filling placeholders — and, if the fleet token is missing, one interactive
 `setup-claude-token.sh` run in their own terminal.
+
+## 0 · Which fleet
+
+Every agent belongs to a fleet — a self-contained directory (see CONTEXT.md).
+Ask which fleet this agent joins: an existing one (list `$FLEETS_ROOT`, default
+`/root/projects/fleets/`) or a new name — `create-agent.sh` skeleton-creates a
+new fleet dir on first use, but a new fleet also needs its own token minted
+(§ Claude in prerequisites.md). A spec containing `/` is used as a path
+verbatim. Use the fleet as the first argument of every script call below.
 
 ## 1 · Prerequisites
 
@@ -21,9 +30,10 @@ to fill into the file by hand afterwards — placeholders keep tokens out of the
 conversation log.
 
 Claude authentication needs nothing collected per agent: the script injects the
-fleet token from `secrets/claude-token` at launch. Check the file exists; if not,
-the operator mints it once with `! sudo ./scripts/setup-claude-token.sh` (see
-§ Claude in prerequisites.md) — say so when they ask where the "claude token" goes.
+fleet's token from `<fleet>/secrets/claude-token` at launch. Check the file
+exists; if not, the operator mints it once with
+`! sudo ./scripts/setup-claude-token.sh <fleet>` (see § Claude in
+prerequisites.md) — say so when they ask where the "claude token" goes.
 
 Done when every checklist item has either a value or a named placeholder.
 
@@ -31,7 +41,8 @@ Done when every checklist item has either a value or a named placeholder.
 
 Invoke the `mattpocock-skills:grilling` and `mattpocock-skills:domain-modeling`
 skills, then grill the agent's identity: `name` (≤ 20 chars, lowercase; becomes unix
-user `agent-<name>` and the tmux session name), persona scalars (display name,
+user `agent-<name>` and the tmux session name — **VM-global across all fleets**,
+and the script refuses a name another fleet holds), persona scalars (display name,
 pronouns, emoji), `purpose`, `soul`, `guardrails`.
 
 The soul is multi-paragraph markdown — role, working process, tone, what it owns and
@@ -55,7 +66,7 @@ Done when the frontier is empty and the operator confirms the identity reads rig
 
 ## 3 · Write
 
-Write `agents/<name>/agent.yaml` (create the folder) following the schema and
+Write `<fleet>/agents/<name>/agent.yaml` (create the folder) following the schema and
 example in [`agent-yaml.md`](agent-yaml.md), then `chmod 600` it. Verify every
 schema field is present and list any placeholders still unfilled.
 
@@ -65,7 +76,7 @@ Once every placeholder is filled (ask the operator to fill any that remain first
 run the script yourself:
 
 ```bash
-sudo ./scripts/create-agent.sh <name>
+sudo ./scripts/create-agent.sh <fleet> <name>
 ```
 
 When it fails, fix the cause here — a missing host package, a bad field, a network
@@ -74,8 +85,8 @@ the fix belongs to every future agent (a prerequisite the script should install
 itself), patch `create-agent.sh`, not just the host.
 
 Done when the script prints its summary block. On success it has also upserted
-the agent's `fleet.yaml` entry and saved the bot invite URL to
-`agents/<name>/invite-url.txt` — point the operator there.
+the agent's entry in the fleet's `fleet.yaml` and saved the bot invite URL to
+`<fleet>/agents/<name>/invite-url.txt` — point the operator there.
 
 ## 5 · Hand off
 

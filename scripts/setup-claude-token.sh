@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# setup-claude-token.sh — mint the fleet's shared Claude OAuth token (Max
-# subscription, ~1-year lifetime) and store it at secrets/claude-token.
+# setup-claude-token.sh — mint one fleet's shared Claude OAuth token (Max
+# subscription, ~1-year lifetime) and store it at <fleet>/secrets/claude-token.
 # create-agent.sh and update-agent.sh install that file per agent and inject it
 # as CLAUDE_CODE_OAUTH_TOKEN at session launch, so agents need no OAuth login
-# of their own. One account serves the whole fleet — see
-# docs/adr/0001-fleet-shared-claude-oauth-token.md.
+# of their own. One account serves the whole fleet (fleets may bill different
+# accounts) — see docs/adr/0001-fleet-shared-claude-oauth-token.md.
 #
 # Interactive (browser authorize + paste) — run it in YOUR terminal:
-#   sudo ./scripts/setup-claude-token.sh
+#   sudo ./scripts/setup-claude-token.sh <fleet>
+#   FLEET=<fleet> sudo ./scripts/setup-claude-token.sh
 #
 # The token lasts about a year; rerun this script when auth starts failing,
-# then relaunch each agent (create-agent.sh <name>) to pick up the new token.
+# then relaunch each agent (create-agent.sh <fleet> <name>) to pick up the
+# new token.
 
 set -euo pipefail
 
@@ -20,7 +22,12 @@ die()  { printf '\033[1;31mfail\033[0m %s\n' "$*" >&2; exit 1; }
 
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 ROOT=$(dirname "$SCRIPT_DIR")
-SECRETS="$ROOT/secrets"
+source "$SCRIPT_DIR/fleet-lib.sh"
+
+USAGE="usage: sudo $0 <fleet>   (or FLEET=<fleet> sudo $0)"
+
+fleet_args 0 "$@"
+SECRETS="$FLEET_DIR/secrets"
 TOKEN_FILE="$SECRETS/claude-token"
 
 [[ $EUID -eq 0 ]] || die "must run as root"
@@ -60,8 +67,8 @@ done
 
 umask 077
 printf '%s\n' "$TOKEN" > "$TOKEN_FILE"
-ok " fleet token stored at secrets/claude-token (0600, gitignored)"
+ok " fleet token stored at $TOKEN_FILE (0600)"
 
 echo
 log "apply it by relaunching each agent:"
-echo "      sudo $SCRIPT_DIR/create-agent.sh <name>"
+echo "      sudo $SCRIPT_DIR/create-agent.sh $FLEET_SPEC <name>"

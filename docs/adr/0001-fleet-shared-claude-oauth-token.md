@@ -19,3 +19,11 @@ launch — the only supported path; scripts refuse to launch without it.
   (unsupported, refresh-rotation risk) and per-agent OAuth logins (manual,
   N× yearly). Per-agent Claude accounts remain a possible future effort if
   isolation or attribution is ever needed.
+
+## Amendment (2026-08-17)
+
+With multi-fleet directories, the token became per fleet: it lives at
+`<fleet>/secrets/claude-token` and is minted with
+`setup-claude-token.sh <fleet>`. "Whole fleet" above now means that one fleet's
+agents — different fleets may bill different Claude accounts. The mechanism is
+unchanged.

@@ -1,13 +1,15 @@
 # agent.yaml — schema and example
 
-One file = one agent. Contains secrets: `chmod 600`, never commit. Consumed by
-`create-agent.sh` (root, rerunnable — reruns amend config and restart the session).
+One file = one agent, at `<fleet>/agents/<name>/agent.yaml`. Contains secrets:
+`chmod 600`, keep it in the fleet dir outside this repo, never commit. Consumed
+by `create-agent.sh <fleet> <name>` (root, rerunnable — reruns amend config and
+restart the session).
 
 ## Fields
 
 | Field | Meaning |
 |---|---|
-| `name` | Agent id. Unix user `agent-<name>`, tmux session `<name>`. Lowercase, ≤ 20 chars |
+| `name` | Agent id. Unix user `agent-<name>`, tmux session `<name>`. Lowercase, ≤ 20 chars, unique across **all** fleets on the VM |
 | `persona.display_name` / `.pronouns` / `.emoji` | Freeform scalars, rendered verbatim into the agent's CLAUDE.md |
 | `purpose` | One paragraph: what this agent is for |
 | `soul` | Multi-paragraph markdown: role, process, tone, ownership |
@@ -18,7 +20,7 @@ One file = one agent. Contains secrets: `chmod 600`, never commit. Consumed by
 | `gitlab.repo` | SSH clone URL; cloned to `~/projects/<repo>`, which is also the launch cwd |
 | `gitlab.token` | PAT, scopes `api` + `write_repository` |
 | `discord.bot_token` | From portal Reset Token → `~/.claude/channels/discord/.env` (agent-owned 0600) |
-| `discord.application_id` | Used only for the bot invite URL, saved to `agents/<name>/invite-url.txt` |
+| `discord.application_id` | Used only for the bot invite URL, saved to `<fleet>/agents/<name>/invite-url.txt` |
 | `discord.guild_id` | The server's snowflake |
 | `discord.operator_user_id` | Your snowflake → `access.json` `allowFrom`, `dmPolicy: allowlist` |
 | `discord.channels[]` | `id` (channel snowflake) + `require_mention` (default `true`) |

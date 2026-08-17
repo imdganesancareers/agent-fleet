@@ -39,8 +39,9 @@ Snowflake IDs (needs Discord **Developer Mode**: User Settings → Advanced):
 
 ## Claude
 
-Nothing to collect per agent. Auth is the **fleet token** at `secrets/claude-token`
-(account-wide, ~1-year, injected as `CLAUDE_CODE_OAUTH_TOKEN` at launch — see
+Nothing to collect per agent. Auth is the **fleet token** at
+`<fleet>/secrets/claude-token` (per fleet — fleets may bill different Claude
+accounts; ~1-year, injected as `CLAUDE_CODE_OAUTH_TOKEN` at launch — see
 `docs/adr/0001`). If the file is missing, the operator mints it once in their own
-terminal: `! sudo ./scripts/setup-claude-token.sh` (interactive browser authorize).
-No API key, no token in the YAML.
+terminal: `! sudo ./scripts/setup-claude-token.sh <fleet>` (interactive browser
+authorize). No API key, no token in the YAML.
