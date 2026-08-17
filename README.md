@@ -91,7 +91,11 @@ skeleton-creates a new fleet dir on first use.
 - **GitLab**: per-recipe PAT (`glab auth login --stdin`, token never on argv)
   plus a per-agent ssh key the script generates and registers.
 - **Discord**: per-agent bot token in the recipe, rendered into an agent-owned
-  `.env`; DMs allowlisted to the operator's user id only.
+  `.env`; DMs allowlisted to the operator's user id only. Agents in the same
+  fleet can wake each other by mention: the scripts patch the plugin's
+  bot-message filter (`scripts/patch-discord-plugin.py`) and inject the fleet
+  peers' bot ids as `DISCORD_ALLOWED_BOT_IDS` at launch — mentions are still
+  required, own messages never come back, and a rate cap bounds mention loops.
 
 Secrets live only inside fleet directories — `<fleet>/agents/*/agent.yaml` and
 `<fleet>/secrets/` — outside this repo entirely, and never in a registry, the

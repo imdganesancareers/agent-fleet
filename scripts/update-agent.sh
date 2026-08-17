@@ -179,12 +179,35 @@ else
   rm -f "$POLICY_DST"
 fi
 
+# ---------- fleet-bot bridge: keep in sync with create-agent.sh ----------
+PEER_BOT_IDS=$(python3 - "$FLEET_DIR/agents" "$NAME" <<'PY'
+import os, sys, yaml
+d, me = sys.argv[1], sys.argv[2]
+ids = []
+for n in sorted(os.listdir(d)):
+    p = os.path.join(d, n, 'agent.yaml')
+    if n == me or not os.path.isfile(p):
+        continue
+    app = str(((yaml.safe_load(open(p)) or {}).get('discord') or {}).get('application_id') or '')
+    if app:
+        ids.append(app)
+print(','.join(ids))
+PY
+)
+PLUGIN_SRV=$(find "$HOME_DIR/.claude/plugins/cache" -path '*discord*' -name server.ts 2>/dev/null | head -1)
+if [[ $PLUGIN_SRV ]] && python3 "$SCRIPT_DIR/patch-discord-plugin.py" "$PLUGIN_SRV" >/dev/null; then
+  ok " fleet-bot bridge in place (peer bots: ${PEER_BOT_IDS:-none})"
+else
+  echo "warn: fleet-bot bridge not applied (plugin missing or changed upstream) — bot-to-bot mentions disabled" >&2
+  PEER_BOT_IDS=""
+fi
+
 # ---------- relaunch so the new identity loads ----------
 install -o "$AGENT" -g "$AGENT" -m 0400 "$CLAUDE_TOKEN_FILE" "$HOME_DIR/.claude/claude-token"
 
 log "restarting tmux session '$NAME'"
 as_agent "tmux kill-session -t '$NAME' 2>/dev/null" || true
-as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static claude --dangerously-skip-permissions --channels plugin:$PLUGIN'"
+as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static DISCORD_ALLOWED_BOT_IDS=$PEER_BOT_IDS claude --dangerously-skip-permissions --channels plugin:$PLUGIN'"
 ok " session '$NAME' relaunched"
 
 echo
