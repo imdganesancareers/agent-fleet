@@ -60,3 +60,11 @@ docs use these words exactly.
 - **Project knowledge** — what an agent has learned about building and running
   a repo (how it builds, how it runs, its quirks). Agent-private, lives in the
   agent's home, survives sessions, dies with retirement.
+- **Subagent** — a native Claude Code feature (`.claude/agents/*.md`, or
+  user-level `~/.claude/agents/*.md`), unrelated to this repo's Agent: an
+  in-session delegation target for the Task/Agent tool, not a Discord-connected
+  unix user. Root's `~/.claude/agents/` deliberately holds four subagents
+  named after the aruvii fleet's agents (`aruvii-analyst`, `aruvii-developer`,
+  `aruvii-qa`, `aruvi-spec-reviewer`) so the operator can delegate to the same
+  personas from any root session — this repo's scripts neither create nor
+  manage them.
