@@ -80,7 +80,15 @@ if ((${#missing[@]})); then
   apt-get install -y -qq "${missing[@]}"
 fi
 touch /etc/containers/nodocker   # silence the "Emulate Docker CLI" notice
-ok " tmux, git, curl, unzip, python3(+yaml), podman(+docker shim, compose)"
+# docker compose v2 (standalone Go binary; podman delegates `docker compose`
+# to it) — the distro's docker-compose 1.29 can't parse modern compose files
+if ! /usr/local/bin/docker-compose version 2>/dev/null | grep -q 'version v'; then
+  arch=$(uname -m)
+  curl -fsSL -o /usr/local/bin/docker-compose \
+    "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${arch}"
+  chmod 755 /usr/local/bin/docker-compose
+fi
+ok " tmux, git, curl, unzip, python3(+yaml), podman(+docker shim), compose v2"
 
 # machine-wide enforcement layer: managed-settings hooks + per-agent policy dir
 "$SCRIPT_DIR/install-enforcement.sh" >/dev/null
@@ -137,6 +145,12 @@ get(cfg, 'discord.guild_id')  # required by schema (documentation/invite use)
 def shq(s):  # single-quote for shell: no interpolation of secrets
     return "'" + str(s).replace("'", "'\\''") + "'"
 
+# --- app block: assigned host port (+ public hostname) for the agent's stack ---
+app = cfg.get('app') or {}
+app_port = app.get('port') or ''
+if app_port and not (isinstance(app_port, int) and 1024 <= app_port <= 65535):
+    sys.exit("app.port must be an integer in 1024–65535")
+
 # --- model: alias (opus/sonnet/fable/haiku) or full model id; blank = CLI default ---
 model = str(cfg.get('model') or '').strip()
 if model and not re.fullmatch(r'[a-z][a-z0-9.-]*', model):
@@ -149,6 +163,7 @@ scalars = {
     'GITLAB_TOKEN': get(cfg, 'gitlab.token'),
     'APP_ID': str(get(cfg, 'discord.application_id', req=False) or ''),
     'DISPLAY_NAME': get(cfg, 'persona.display_name'),
+    'APP_PORT': str(app_port),
     'MODEL': model,
 }
 with open(f"{stage}/env.sh", 'w') as f:
@@ -215,6 +230,29 @@ if skills:
     skills_md = ("\n## Fleet skills granted\n\nInstalled at `~/.claude/skills` "
                  "— invoke the matching skill when the task fits:\n"
                  + "".join(f"- {s}\n" for s in skills))
+app_md = ""
+if app_port:
+    url = f"https://{app.get('host')}" if app.get('host') else f"http://localhost:{app_port}"
+    app_md = f"""
+## Your app stack — port block {app_port}–{app_port + 99}
+
+Host ports are shared by everyone on this VM; yours are {app_port}–{app_port + 99}
+and no others. Always start the project's docker/compose stack with its HTTP
+entry on port {app_port} (`ARUVII_HTTP_PORT={app_port}` and
+`ARUVII_PORT_BASE={app_port}` are preset in your environment; pass them through
+to compose/make) — never on the repo's default ports, which belong to the
+humans. Your running stack is reachable at {url} through the host reverse
+proxy; while it is down that URL shows an offline page. If the compose files
+don't yet accept the port variables, report it in Discord instead of falling
+back to default ports.
+
+**Check before you start.** This VM has ~8 GB RAM shared by every agent and
+human; one app stack costs ~3 GB and builds/Playwright spike higher. Before
+`up`, a build, or a Playwright run, check `free -m`: if **available** is
+below 3500 MB, someone else's stack or build is using the room — say so in
+Discord (mention them or the operator) and agree who goes first instead of
+starting anyway. Two idle stacks fit; two heavy operations at once do not.
+"""
 open(f"{stage}/CLAUDE.md", 'w').write(f"""# {disp} {emoji} — agent-{name}
 
 You are {disp} ({pron}), an autonomous Claude agent running as unix user
@@ -236,7 +274,7 @@ minutes, post a progress update there.
 {get(cfg, 'soul').strip()}
 
 {get(cfg, 'guardrails').strip()}
-{skills_md}""")
+{app_md}{skills_md}""")
 PY
 source "$STAGE/env.sh"
 
@@ -418,11 +456,13 @@ else
 fi
 
 # ---------- relaunch ----------
+APP_ENV=""
+[[ ${APP_PORT:-} ]] && APP_ENV="ARUVII_PORT_BASE=$APP_PORT ARUVII_HTTP_PORT=$APP_PORT "
 MODEL_FLAG=""
 [[ ${MODEL:-} ]] && MODEL_FLAG="--model $MODEL "
 log "restarting tmux session '$NAME'"
 as_agent "tmux kill-session -t '$NAME' 2>/dev/null" || true
-as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static DISCORD_ALLOWED_BOT_IDS=$PEER_BOT_IDS claude ${MODEL_FLAG}--dangerously-skip-permissions --channels plugin:$PLUGIN'"
+as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static DISCORD_ALLOWED_BOT_IDS=$PEER_BOT_IDS ${APP_ENV}claude ${MODEL_FLAG}--dangerously-skip-permissions --channels plugin:$PLUGIN'"
 ok " session '$NAME' running as $AGENT in $REPO_PATH (authenticated via fleet token)"
 
 # ---------- registry ----------

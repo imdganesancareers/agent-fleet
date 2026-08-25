@@ -73,6 +73,12 @@ if not isinstance(channels, list) or not channels or not channels[0].get('id'):
 def shq(s):
     return "'" + str(s).replace("'", "'\\''") + "'"
 
+# --- app block: keep in sync with create-agent.sh ---
+app = cfg.get('app') or {}
+app_port = app.get('port') or ''
+if app_port and not (isinstance(app_port, int) and 1024 <= app_port <= 65535):
+    sys.exit("app.port must be an integer in 1024–65535")
+
 # --- model: keep in sync with create-agent.sh ---
 model = str(cfg.get('model') or '').strip()
 if model and not re.fullmatch(r'[a-z][a-z0-9.-]*', model):
@@ -81,6 +87,7 @@ if model and not re.fullmatch(r'[a-z][a-z0-9.-]*', model):
 with open(f"{stage}/env.sh", 'w') as f:
     for k, v in {'NAME': name, 'REPO_DIR': repo_dir,
                  'DISPLAY_NAME': get(cfg, 'persona.display_name'),
+                 'APP_PORT': str(app_port),
                  'MODEL': model}.items():
         f.write(f"{k}={shq(v)}\n")
 
@@ -121,6 +128,29 @@ if skills:
     skills_md = ("\n## Fleet skills granted\n\nInstalled at `~/.claude/skills` "
                  "— invoke the matching skill when the task fits:\n"
                  + "".join(f"- {s}\n" for s in skills))
+app_md = ""
+if app_port:
+    url = f"https://{app.get('host')}" if app.get('host') else f"http://localhost:{app_port}"
+    app_md = f"""
+## Your app stack — port block {app_port}–{app_port + 99}
+
+Host ports are shared by everyone on this VM; yours are {app_port}–{app_port + 99}
+and no others. Always start the project's docker/compose stack with its HTTP
+entry on port {app_port} (`ARUVII_HTTP_PORT={app_port}` and
+`ARUVII_PORT_BASE={app_port}` are preset in your environment; pass them through
+to compose/make) — never on the repo's default ports, which belong to the
+humans. Your running stack is reachable at {url} through the host reverse
+proxy; while it is down that URL shows an offline page. If the compose files
+don't yet accept the port variables, report it in Discord instead of falling
+back to default ports.
+
+**Check before you start.** This VM has ~8 GB RAM shared by every agent and
+human; one app stack costs ~3 GB and builds/Playwright spike higher. Before
+`up`, a build, or a Playwright run, check `free -m`: if **available** is
+below 3500 MB, someone else's stack or build is using the room — say so in
+Discord (mention them or the operator) and agree who goes first instead of
+starting anyway. Two idle stacks fit; two heavy operations at once do not.
+"""
 open(f"{stage}/CLAUDE.md", 'w').write(f"""# {disp} {emoji} — agent-{name}
 
 You are {disp} ({pron}), an autonomous Claude agent running as unix user
@@ -142,7 +172,7 @@ minutes, post a progress update there.
 {get(cfg, 'soul').strip()}
 
 {get(cfg, 'guardrails').strip()}
-{skills_md}""")
+{app_md}{skills_md}""")
 PY
 source "$STAGE/env.sh"
 
@@ -211,11 +241,13 @@ fi
 # ---------- relaunch so the new identity loads ----------
 install -o "$AGENT" -g "$AGENT" -m 0400 "$CLAUDE_TOKEN_FILE" "$HOME_DIR/.claude/claude-token"
 
+APP_ENV=""
+[[ ${APP_PORT:-} ]] && APP_ENV="ARUVII_PORT_BASE=$APP_PORT ARUVII_HTTP_PORT=$APP_PORT "
 MODEL_FLAG=""
 [[ ${MODEL:-} ]] && MODEL_FLAG="--model $MODEL "
 log "restarting tmux session '$NAME'"
 as_agent "tmux kill-session -t '$NAME' 2>/dev/null" || true
-as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static DISCORD_ALLOWED_BOT_IDS=$PEER_BOT_IDS claude ${MODEL_FLAG}--dangerously-skip-permissions --channels plugin:$PLUGIN'"
+as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static DISCORD_ALLOWED_BOT_IDS=$PEER_BOT_IDS ${APP_ENV}claude ${MODEL_FLAG}--dangerously-skip-permissions --channels plugin:$PLUGIN'"
 ok " session '$NAME' relaunched"
 
 echo
