@@ -244,6 +244,28 @@ else
   PEER_BOT_IDS=""
 fi
 
+# ---------- reap orphaned background sessions ----------
+# A session killed while blocked (e.g. waiting on a permission prompt) can be
+# rescued by Claude Code's own resilience layer into a persistent background
+# job instead of dying — left alone it keeps its own Discord gateway
+# connection open on this agent's bot token, competing with the relaunched
+# session for the same mentions.
+BG_PIDS=$(as_agent 'claude agents --json 2>/dev/null' | python3 -c "
+import json, sys
+try:
+    jobs = json.load(sys.stdin)
+except Exception:
+    jobs = []
+print(' '.join(str(j['pid']) for j in jobs if j.get('kind') == 'background'))
+" 2>/dev/null)
+if [[ $BG_PIDS ]]; then
+  echo "warn: reaping orphaned background session(s): $BG_PIDS" >&2
+  for pid in $BG_PIDS; do
+    as_agent "kill -TERM $pid" 2>/dev/null || true
+  done
+  sleep 1
+fi
+
 # ---------- relaunch so the new identity loads ----------
 install -o "$AGENT" -g "$AGENT" -m 0400 "$CLAUDE_TOKEN_FILE" "$HOME_DIR/.claude/claude-token"
 
