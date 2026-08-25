@@ -313,7 +313,10 @@ done
 ok " skeleton + PATH block"
 
 # ---------- toolchain: claude, bun, glab (all $HOME-scoped, no root) ----------
-if [[ -x $HOME_DIR/.local/bin/claude ]]; then ok " claude present"; else
+if [[ -x $HOME_DIR/.local/bin/claude ]]; then
+  as_agent 'claude install latest' >/dev/null 2>&1 || true
+  ok " claude present (kept current: $(as_agent 'claude --version' 2>/dev/null))"
+else
   log "installing claude (native installer)"
   as_agent 'curl -fsSL https://claude.ai/install.sh | bash'
   ok " claude installed"

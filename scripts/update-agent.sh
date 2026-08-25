@@ -11,7 +11,9 @@
 # Deliberately narrow for now: tokens, Discord access config, git identity,
 # repo and installs are create-agent.sh's job — rerun that for those fields.
 # The CLAUDE.md template and the launch line are kept in sync with
-# create-agent.sh; change them there first.
+# create-agent.sh; change them there first. One deliberate exception: the
+# claude CLI itself is kept current on every run (a patch update, not a new
+# install) since stale versions are a real source of drift-vs-latest-fixes.
 
 set -euo pipefail
 
@@ -193,6 +195,10 @@ install -o root -g root -m 0444 "$STAGE/CLAUDE.md" "$HOME_DIR/.claude/CLAUDE.md"
 install -o root -g root -m 0400 "$YAML"            "$HOME_DIR/agent.yaml"
 python3 "$SCRIPT_DIR/fleet-registry.py" "$REGISTRY" set-purpose "$NAME" --purpose-from "$YAML"
 ok " identity applied (CLAUDE.md re-rendered, archive + registry purpose refreshed)"
+
+# ---------- keep the claude CLI current (patch update, not a fresh install) ----------
+as_agent 'claude install latest' >/dev/null 2>&1 || true
+ok " claude kept current: $(as_agent 'claude --version' 2>/dev/null)"
 
 # ---------- enforcement layer, fleet skills, enforced policy, lingering ----------
 "$SCRIPT_DIR/install-enforcement.sh" >/dev/null
