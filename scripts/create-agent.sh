@@ -296,6 +296,47 @@ chmod 750 "$HOME_DIR"
 loginctl enable-linger "$AGENT" 2>/dev/null || true
 ok " lingering enabled (rootless containers)"
 
+# `podman build` (buildah) defaults RUN-step nofile to 1024:1024 regardless of
+# the caller's ulimit — only containers.conf's default_ulimits or an explicit
+# --ulimit flag changes it. Merge (never overwrite) since agents may already
+# have their own containers.conf (e.g. compose_providers).
+as_agent 'mkdir -p ~/.config/containers'
+CONF="$HOME_DIR/.config/containers/containers.conf"
+python3 - "$CONF" <<'PY'
+import tomllib, sys
+
+path = sys.argv[1]
+try:
+    with open(path, 'rb') as f:
+        cfg = tomllib.load(f)
+except FileNotFoundError:
+    cfg = {}
+
+cfg.setdefault('containers', {})['default_ulimits'] = ["nofile=1048576:1048576"]
+
+def fmt_val(v):
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, str):
+        return '"' + v.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    if isinstance(v, list):
+        return "[" + ", ".join(fmt_val(x) for x in v) + "]"
+    raise TypeError(f"unsupported TOML value type for this minimal writer: {type(v)}")
+
+out = []
+for table, kv in cfg.items():
+    out.append(f"[{table}]")
+    for k, v in kv.items():
+        out.append(f"{k} = {fmt_val(v)}")
+    out.append("")
+with open(path, 'w') as f:
+    f.write("\n".join(out).rstrip() + "\n")
+PY
+chown "$AGENT:$AGENT" "$CONF"
+ok " containers.conf: default_ulimits raised for podman build (nofile=1048576:1048576)"
+
 # ---------- skeleton + PATH ----------
 as_agent 'mkdir -p ~/.local/bin ~/projects ~/.claude/channels/discord'
 for f in .profile .bashrc; do
