@@ -137,6 +137,11 @@ get(cfg, 'discord.guild_id')  # required by schema (documentation/invite use)
 def shq(s):  # single-quote for shell: no interpolation of secrets
     return "'" + str(s).replace("'", "'\\''") + "'"
 
+# --- model: alias (opus/sonnet/fable/haiku) or full model id; blank = CLI default ---
+model = str(cfg.get('model') or '').strip()
+if model and not re.fullmatch(r'[a-z][a-z0-9.-]*', model):
+    sys.exit("model must be an alias (opus/sonnet/fable/haiku) or a full model id")
+
 scalars = {
     'NAME': name, 'REPO': repo, 'REPO_DIR': repo_dir,
     'GIT_NAME': get(cfg, 'git.author_name'),
@@ -144,6 +149,7 @@ scalars = {
     'GITLAB_TOKEN': get(cfg, 'gitlab.token'),
     'APP_ID': str(get(cfg, 'discord.application_id', req=False) or ''),
     'DISPLAY_NAME': get(cfg, 'persona.display_name'),
+    'MODEL': model,
 }
 with open(f"{stage}/env.sh", 'w') as f:
     for k, v in scalars.items():
@@ -412,9 +418,11 @@ else
 fi
 
 # ---------- relaunch ----------
+MODEL_FLAG=""
+[[ ${MODEL:-} ]] && MODEL_FLAG="--model $MODEL "
 log "restarting tmux session '$NAME'"
 as_agent "tmux kill-session -t '$NAME' 2>/dev/null" || true
-as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static DISCORD_ALLOWED_BOT_IDS=$PEER_BOT_IDS claude --dangerously-skip-permissions --channels plugin:$PLUGIN'"
+as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static DISCORD_ALLOWED_BOT_IDS=$PEER_BOT_IDS claude ${MODEL_FLAG}--dangerously-skip-permissions --channels plugin:$PLUGIN'"
 ok " session '$NAME' running as $AGENT in $REPO_PATH (authenticated via fleet token)"
 
 # ---------- registry ----------

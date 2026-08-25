@@ -16,6 +16,7 @@ restart the session).
 | `guardrails` | Multi-paragraph markdown; starts from the defaults below |
 | `skills` | Optional list of fleet skill names (dirs under `skills/` in this repo); rendered root-owned into the agent's `~/.claude/skills` and advertised in its CLAUDE.md |
 | `enforced` | Optional list of hard guardrails `{tools, pattern, reason}`; compiled to `/etc/claude-code/fleet-policy/agent-<name>.json` for the machine-wide fleet-guard hook (see below) |
+| `model` | Optional: an alias (`opus`, `sonnet`, `fable`, `haiku`) or a full model id, passed as `claude --model <model>`. Blank/omitted uses the CLI's own default. Pick per the agent's job: judgment-heavy gate-keeping (spec review, requirements grilling) warrants a stronger model than well-specified execution (implementing an already-approved story) — and a reviewer sharing its builder's exact model shares its blind spots too |
 | `git.author_name` / `.author_email` | Commit identity (`git config --global`) |
 | `gitlab.repo` | HTTPS clone URL (`https://gitlab.com/<group>/<repo>.git`); cloned to `~/projects/<repo>`, which is also the launch cwd. Auth is the token below via a stored git credential — no SSH key involved |
 | `gitlab.token` | PAT, scopes `api` + `write_repository`; used for `glab` and as the git HTTPS credential |

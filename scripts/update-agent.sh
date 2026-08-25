@@ -73,9 +73,15 @@ if not isinstance(channels, list) or not channels or not channels[0].get('id'):
 def shq(s):
     return "'" + str(s).replace("'", "'\\''") + "'"
 
+# --- model: keep in sync with create-agent.sh ---
+model = str(cfg.get('model') or '').strip()
+if model and not re.fullmatch(r'[a-z][a-z0-9.-]*', model):
+    sys.exit("model must be an alias (opus/sonnet/fable/haiku) or a full model id")
+
 with open(f"{stage}/env.sh", 'w') as f:
     for k, v in {'NAME': name, 'REPO_DIR': repo_dir,
-                 'DISPLAY_NAME': get(cfg, 'persona.display_name')}.items():
+                 'DISPLAY_NAME': get(cfg, 'persona.display_name'),
+                 'MODEL': model}.items():
         f.write(f"{k}={shq(v)}\n")
 
 # --- fleet skills + enforced policy: keep in sync with create-agent.sh ---
@@ -205,9 +211,11 @@ fi
 # ---------- relaunch so the new identity loads ----------
 install -o "$AGENT" -g "$AGENT" -m 0400 "$CLAUDE_TOKEN_FILE" "$HOME_DIR/.claude/claude-token"
 
+MODEL_FLAG=""
+[[ ${MODEL:-} ]] && MODEL_FLAG="--model $MODEL "
 log "restarting tmux session '$NAME'"
 as_agent "tmux kill-session -t '$NAME' 2>/dev/null" || true
-as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static DISCORD_ALLOWED_BOT_IDS=$PEER_BOT_IDS claude --dangerously-skip-permissions --channels plugin:$PLUGIN'"
+as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static DISCORD_ALLOWED_BOT_IDS=$PEER_BOT_IDS claude ${MODEL_FLAG}--dangerously-skip-permissions --channels plugin:$PLUGIN'"
 ok " session '$NAME' relaunched"
 
 echo
