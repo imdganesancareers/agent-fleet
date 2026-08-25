@@ -17,8 +17,8 @@ restart the session).
 | `skills` | Optional list of fleet skill names (dirs under `skills/` in this repo); rendered root-owned into the agent's `~/.claude/skills` and advertised in its CLAUDE.md |
 | `enforced` | Optional list of hard guardrails `{tools, pattern, reason}`; compiled to `/etc/claude-code/fleet-policy/agent-<name>.json` for the machine-wide fleet-guard hook (see below) |
 | `git.author_name` / `.author_email` | Commit identity (`git config --global`) |
-| `gitlab.repo` | SSH clone URL; cloned to `~/projects/<repo>`, which is also the launch cwd |
-| `gitlab.token` | PAT, scopes `api` + `write_repository` |
+| `gitlab.repo` | HTTPS clone URL (`https://gitlab.com/<group>/<repo>.git`); cloned to `~/projects/<repo>`, which is also the launch cwd. Auth is the token below via a stored git credential — no SSH key involved |
+| `gitlab.token` | PAT, scopes `api` + `write_repository`; used for `glab` and as the git HTTPS credential |
 | `discord.bot_token` | From portal Reset Token → `~/.claude/channels/discord/.env` (agent-owned 0600) |
 | `discord.application_id` | Used only for the bot invite URL, saved to `<fleet>/agents/<name>/invite-url.txt` |
 | `discord.guild_id` | The server's snowflake |
@@ -57,7 +57,7 @@ git:
   author_name: "Ganesan"
   author_email: "imdganesan.careers@gmail.com"
 gitlab:
-  repo: git@gitlab.com:ai-agent-build-platform/agent-platform.git
+  repo: https://gitlab.com/ai-agent-build-platform/agent-platform.git
   token: "REPLACE_GITLAB_TOKEN"
 discord:
   bot_token: "REPLACE_DISCORD_BOT_TOKEN"

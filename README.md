@@ -28,7 +28,7 @@ One agent is:
 | unix user `agent-<name>` | isolation boundary: no sudo, own home, own toolchain (claude, bun, glab) |
 | tmux session `<name>` | runs `claude --dangerously-skip-permissions --channels plugin:discord` |
 | `<fleet>/agents/<name>/agent.yaml` | the **recipe** — the single self-contained definition (identity + secrets) |
-| `~/projects/<repo>` | the agent's workspace, cloned from GitLab over its own ssh key |
+| `~/projects/<repo>` | the agent's workspace, cloned from GitLab over its own HTTPS git credential |
 | an entry in `<fleet>/fleet.yaml` | the fleet's **registry of record**: name, status (active/retired), created, purpose |
 
 The agent's identity (persona, purpose, soul, guardrails) is rendered from the
@@ -70,7 +70,7 @@ skeleton-creates a new fleet dir on first use.
 
 | Script | Does |
 |---|---|
-| `sudo ./scripts/create-agent.sh <fleet> <name>` | provisions or **reconciles** an agent from its recipe: user, toolchain, GitLab auth + ssh key, repo clone, rendered config, Discord plugin, tmux relaunch, registry upsert. Rerunnable — keeps what already succeeded. Refuses a name any other fleet holds. |
+| `sudo ./scripts/create-agent.sh <fleet> <name>` | provisions or **reconciles** an agent from its recipe: user, toolchain, GitLab auth + git credential, repo clone, rendered config, Discord plugin, tmux relaunch, registry upsert. Rerunnable — keeps what already succeeded. Refuses a name any other fleet holds. |
 | `sudo ./scripts/list-agent.sh <fleet>` | prints the fleet's table and reports **drift** (registry vs reality: missing users, dead recipes, `agent-*` users no fleet registers). Exit 1 on drift — doubles as a health check. |
 | `sudo ./scripts/update-agent.sh <fleet> <name>` | applies identity-only edits (soul/persona) from the recipe: re-renders `CLAUDE.md`, refreshes the registry purpose, relaunches the session. |
 | `sudo ./scripts/delete-agent.sh <fleet> <name>` | retires an agent: destroys session, user, and home after a type-the-name confirmation (`--yes` to skip). The recipe and registry entry survive, so recreation is one command. |
@@ -88,8 +88,9 @@ skeleton-creates a new fleet dir on first use.
   different fleets may bill different Claude accounts. Agents never hold their
   own Claude login; rotating = remint + relaunch. Rationale in
   [ADR 0001](docs/adr/0001-fleet-shared-claude-oauth-token.md).
-- **GitLab**: per-recipe PAT (`glab auth login --stdin`, token never on argv)
-  plus a per-agent ssh key the script generates and registers.
+- **GitLab**: per-recipe PAT (`glab auth login --stdin`, token never on argv),
+  stored as an HTTPS git credential (`~/.git-credentials`) so `git clone`/push
+  authenticate the same way `glab` does — no SSH key involved.
 - **Discord**: per-agent bot token in the recipe, rendered into an agent-owned
   `.env`; DMs allowlisted to the operator's user id only. Agents in the same
   fleet can wake each other by mention: the scripts patch the plugin's

@@ -46,7 +46,7 @@ status=$(python3 "$SCRIPT_DIR/fleet-registry.py" "$REGISTRY" get "$CLI_NAME" sta
 
 echo "This will DESTROY:"
 echo "  - tmux session '$CLI_NAME' (in-flight work dies with it)"
-echo "  - unix user $AGENT and all of /home/$AGENT (workspace clone, Claude OAuth login, ssh key)"
+echo "  - unix user $AGENT and all of /home/$AGENT (workspace clone, Claude OAuth login, git credential)"
 echo "This will KEEP:"
 echo "  - the recipe $FLEET_DIR/agents/$CLI_NAME/ — recreate any time with: sudo $SCRIPT_DIR/create-agent.sh $FLEET_SPEC $CLI_NAME"
 echo "  - the fleet.yaml entry, marked retired"
@@ -76,8 +76,7 @@ fi
 echo
 log "$CLI_NAME retired. Manual cleanup this script cannot do:"
 cat <<EOF
-  - GitLab: remove the agent's ssh key (titled '$AGENT') from the account's keys,
-    and revoke the PAT in $FLEET_DIR/agents/$CLI_NAME/agent.yaml if it was minted for this agent alone
+  - GitLab: revoke the PAT in $FLEET_DIR/agents/$CLI_NAME/agent.yaml if it was minted for this agent alone
   - Discord: delete or reset the bot application in the developer portal
     (application id is in $FLEET_DIR/agents/$CLI_NAME/agent.yaml)
 EOF

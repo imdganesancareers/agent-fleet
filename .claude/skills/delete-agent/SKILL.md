@@ -5,10 +5,11 @@ disable-model-invocation: true
 ---
 
 Retiring destroys the agent's tmux session, unix user, and entire home
-(workspace clone, Claude OAuth login, ssh key). It keeps the recipe
+(workspace clone, Claude OAuth login, git credential). It keeps the recipe
 `<fleet>/agents/<name>/` and the entry in the fleet's `fleet.yaml` (marked
 retired), so `scripts/create-agent.sh <fleet> <name>` can resurrect the agent
-any time — but the OAuth login and ssh-key registration would need redoing.
+any time — the git credential is re-derived from the token already in the
+recipe, nothing to redo by hand.
 
 ## 1 · Confirm the target
 
@@ -30,8 +31,8 @@ its fixes instead.
 
 ## 3 · Hand off the manual cleanup
 
-Relay the script's closing checklist verbatim: the GitLab ssh key (titled
-`agent-<name>`) and any agent-specific PAT, and the Discord bot application —
-external resources only the operator's accounts can remove.
+Relay the script's closing checklist verbatim: any agent-specific PAT and the
+Discord bot application — external resources only the operator's accounts can
+remove.
 
 Done when the script has printed "retired" and the checklist has been relayed.

@@ -10,7 +10,7 @@
 # skeleton-created on first use. Agent names are VM-global: a name claimed by
 # another fleet (or a foreign unix user) is refused.
 #
-# Rerunnable: existing pieces (user, installs, clone, ssh key) are kept, rendered
+# Rerunnable: existing pieces (user, installs, clone, git credentials) are kept, rendered
 # config is refreshed, and the tmux session is always killed and relaunched. On
 # success the agent's entry in the fleet's fleet.yaml is upserted (status active,
 # created date kept on rerun). Author the recipe with the /create-agent skill;
@@ -90,7 +90,7 @@ ok " enforcement layer (/etc/claude-code) current"
 STAGE=$(mktemp -d); chmod 700 "$STAGE"; trap 'rm -rf "$STAGE"' EXIT
 
 python3 - "$YAML" "$STAGE" "$CLI_NAME" "$ROOT" <<'PY' || die "agent.yaml invalid"
-import json, os, re, sys, yaml
+import json, os, re, sys, urllib.parse, yaml
 
 path, stage, cli_name, root = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cfg = yaml.safe_load(open(path))
@@ -122,6 +122,8 @@ if name != cli_name:
     sys.exit(f"agent.yaml name '{name}' does not match folder agents/{cli_name}/")
 
 repo = get(cfg, 'gitlab.repo')
+if not repo.startswith('https://'):
+    sys.exit("gitlab.repo must be an https:// clone URL (git auth is token-based, no SSH key)")
 repo_dir = re.sub(r'\.git$', '', repo.rsplit('/', 1)[-1])
 
 channels = get(cfg, 'discord.channels')
@@ -146,6 +148,11 @@ scalars = {
 with open(f"{stage}/env.sh", 'w') as f:
     for k, v in scalars.items():
         f.write(f"{k}={shq(v)}\n")
+
+# --- git HTTPS credential (matches by host, works for any repo on it) ---
+gitlab_host = urllib.parse.urlparse(repo).netloc
+open(f"{stage}/git-credentials", 'w').write(
+    f"https://oauth2:{urllib.parse.quote(get(cfg, 'gitlab.token'), safe='')}@{gitlab_host}\n")
 
 access = {
     "dmPolicy": "allowlist",
@@ -246,7 +253,7 @@ loginctl enable-linger "$AGENT" 2>/dev/null || true
 ok " lingering enabled (rootless containers)"
 
 # ---------- skeleton + PATH ----------
-as_agent 'mkdir -p ~/.local/bin ~/projects ~/.ssh ~/.claude/channels/discord && chmod 700 ~/.ssh'
+as_agent 'mkdir -p ~/.local/bin ~/projects ~/.claude/channels/discord'
 for f in .profile .bashrc; do
   target="$HOME_DIR/$f"
   [[ -f $target ]] || { touch "$target"; chown "$AGENT:$AGENT" "$target"; }
@@ -286,29 +293,24 @@ if [[ -x $HOME_DIR/.local/bin/glab ]]; then ok " glab present"; else
   ok " glab installed"
 fi
 
-# ---------- gitlab: auth, ssh key, git identity, clone ----------
+# ---------- gitlab: auth, git identity, clone (HTTPS + token, no ssh key) ----------
 log "gitlab auth (token via stdin, never argv)"
 printf '%s' "$GITLAB_TOKEN" | as_agent 'glab auth login --hostname gitlab.com --stdin'
 ok " glab authenticated"
 
-if [[ -f $HOME_DIR/.ssh/id_ed25519 ]]; then ok " ssh key exists"; else
-  as_agent "ssh-keygen -t ed25519 -N '' -f ~/.ssh/id_ed25519 -C '$AGENT'"
-  ok " ssh key generated"
-fi
-grep -qs gitlab.com "$HOME_DIR/.ssh/known_hosts" \
-  || as_agent 'ssh-keyscan gitlab.com >> ~/.ssh/known_hosts 2>/dev/null'
-if as_agent "glab ssh-key add ~/.ssh/id_ed25519.pub --title '$AGENT'" >/dev/null 2>&1; then
-  ok " ssh key registered on gitlab"
-else
-  warn "glab ssh-key add failed (already registered?) — continuing"
-fi
+install -o "$AGENT" -g "$AGENT" -m 0600 "$STAGE/git-credentials" "$HOME_DIR/.git-credentials"
+runuser -u "$AGENT" -- env -C "$HOME_DIR" HOME="$HOME_DIR" git config --global credential.helper store
+ok " git HTTPS credential installed (token-based, no ssh key needed)"
 
 # env -C: give the agent a cwd it can stat (the caller's cwd is under /root)
 runuser -u "$AGENT" -- env -C "$HOME_DIR" HOME="$HOME_DIR" git config --global user.name "$GIT_NAME"
 runuser -u "$AGENT" -- env -C "$HOME_DIR" HOME="$HOME_DIR" git config --global user.email "$GIT_EMAIL"
 ok " git identity: $GIT_NAME <$GIT_EMAIL>"
 
-if [[ -d $REPO_PATH/.git ]]; then ok " repo cloned"; else
+if [[ -d $REPO_PATH/.git ]]; then
+  as_agent "cd '$REPO_PATH' && git remote set-url origin '$REPO'"
+  ok " repo cloned (remote reconciled to $REPO)"
+else
   log "cloning $REPO"
   as_agent "git clone '$REPO' '$REPO_PATH'"
   ok " cloned to $REPO_PATH"
