@@ -337,6 +337,18 @@ PY
 chown "$AGENT:$AGENT" "$CONF"
 ok " containers.conf: default_ulimits raised for podman build (nofile=1048576:1048576)"
 
+# `docker compose build` doesn't go through the buildah CLI above — it talks to
+# podman's per-user API socket, which nothing else starts (no socket
+# activation here: bare `podman system service` processes). Two failure modes
+# without this: a first-time agent has no socket and `docker compose build`
+# fails outright; a rerun that only edited containers.conf leaves an
+# already-running service serving the ulimit config from whenever it started,
+# not the one just written above (reproduced: a service started 80min before
+# a containers.conf edit kept serving 1024/1024 nofile until restarted).
+# try-restart picks up the fresh config on rerun; enable --now covers first run.
+as_agent 'export XDG_RUNTIME_DIR=/run/user/$(id -u); systemctl --user try-restart podman.socket podman.service 2>/dev/null; systemctl --user enable --now podman.socket'
+ok " podman.socket enabled and current (docker-compose build path ready)"
+
 # ---------- skeleton + PATH ----------
 as_agent 'mkdir -p ~/.local/bin ~/projects ~/.claude/channels/discord'
 for f in .profile .bashrc; do
