@@ -2,10 +2,13 @@
 
 Type: task
 Status: open
-Blocked by: 01
+Blocked by: 01, 13
 
 ## Question
 
+Satisfied by running `.scratch/contabo-migration/migrate.sh setup` (see
+[Write the migration script](13-write-migration-script.md)) rather than a
+manual command.
 `rsync -avz -e ssh /root/projects/fleets/aruvii/ root@<new-vm>:/root/projects/fleets/aruvii/`
 — moves `fleet.yaml`, all 4 `agents/<name>/agent.yaml` recipes (inline
 secrets: GitLab PAT, Discord bot token) and `secrets/claude-token` in one

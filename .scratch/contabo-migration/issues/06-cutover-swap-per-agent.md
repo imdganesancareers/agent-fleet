@@ -2,9 +2,13 @@
 
 Type: task
 Status: open
-Blocked by: 02, 03, 04, 05, 11, 12
+Blocked by: 02, 03, 04, 05, 11, 12, 13
 
 ## Question
+
+Satisfied by running `.scratch/contabo-migration/migrate.sh cutover <name>`
+per agent (see [Write the migration script](13-write-migration-script.md))
+rather than the manual commands below.
 
 Blocked on [Resource governance](12-resource-governance.md) landing first
 (operator's explicit call, 2026-09-16): the new VM should start with memory

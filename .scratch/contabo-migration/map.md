@@ -72,6 +72,12 @@ agent has answered a live Discord mention from there.
   it as part of cutover.
 - Downtime: short (minutes–ish) is acceptable — provision as much as
   possible on the new VM ahead of the actual per-agent swap.
+- The migration itself is scripted, not hand-run (operator's explicit
+  call, 2026-09-16) — matches `CLAUDE.md`'s "a script owns a state change"
+  rule. Scoped as a **throwaway helper for this move only**
+  (`.scratch/contabo-migration/migrate.sh`), not a permanent addition to
+  `scripts/` — keeps the earlier single-VM tooling-scope decision intact.
+  See [Write the migration script](issues/13-write-migration-script.md).
 
 ## Decisions so far
 
