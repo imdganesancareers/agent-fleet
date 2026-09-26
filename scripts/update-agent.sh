@@ -86,11 +86,18 @@ model = str(cfg.get('model') or '').strip()
 if model and not re.fullmatch(r'[a-z][a-z0-9.-]*', model):
     sys.exit("model must be an alias (opus/sonnet/fable/haiku) or a full model id")
 
+# --- permission_mode: keep in sync with create-agent.sh ---
+PERMISSION_MODES = {'acceptEdits', 'auto', 'bypassPermissions', 'manual', 'dontAsk', 'plan'}
+permission_mode = str(cfg.get('permission_mode') or '').strip()
+if permission_mode and permission_mode not in PERMISSION_MODES:
+    sys.exit(f"permission_mode must be one of {sorted(PERMISSION_MODES)} or omitted")
+
 with open(f"{stage}/env.sh", 'w') as f:
     for k, v in {'NAME': name, 'REPO_DIR': repo_dir,
                  'DISPLAY_NAME': get(cfg, 'persona.display_name'),
                  'APP_PORT': str(app_port),
-                 'MODEL': model}.items():
+                 'MODEL': model,
+                 'PERMISSION_MODE': permission_mode}.items():
         f.write(f"{k}={shq(v)}\n")
 
 # --- fleet skills + enforced policy: keep in sync with create-agent.sh ---
@@ -273,9 +280,14 @@ APP_ENV=""
 [[ ${APP_PORT:-} ]] && APP_ENV="ARUVII_PORT_BASE=$APP_PORT ARUVII_HTTP_PORT=$APP_PORT "
 MODEL_FLAG=""
 [[ ${MODEL:-} ]] && MODEL_FLAG="--model $MODEL "
+if [[ ${PERMISSION_MODE:-} && $PERMISSION_MODE != "bypassPermissions" ]]; then
+  PERMISSION_FLAGS="--permission-mode $PERMISSION_MODE"
+else
+  PERMISSION_FLAGS="--dangerously-skip-permissions"
+fi
 log "restarting tmux session '$NAME'"
 as_agent "tmux kill-session -t '$NAME' 2>/dev/null" || true
-as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static DISCORD_ALLOWED_BOT_IDS=$PEER_BOT_IDS ${APP_ENV}claude ${MODEL_FLAG}--dangerously-skip-permissions --channels plugin:$PLUGIN'"
+as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static DISCORD_ALLOWED_BOT_IDS=$PEER_BOT_IDS ${APP_ENV}claude ${MODEL_FLAG}$PERMISSION_FLAGS --channels plugin:$PLUGIN'"
 ok " session '$NAME' relaunched"
 
 echo
