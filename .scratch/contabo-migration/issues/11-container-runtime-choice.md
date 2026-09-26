@@ -1,7 +1,7 @@
 # 11 — Architecture reconsideration: industry patterns for multi-agent fleets
 
 Type: grilling
-Status: open
+Status: resolved
 
 ## Question
 
@@ -79,3 +79,63 @@ Headline findings, all from primary/vendor sources:
 The research stayed neutral by design (mapped against this fleet's actual
 constraints — 4 agents, one VM, no sudo, cost-conscious — without
 recommending a change). Next step is grilling this with the operator.
+
+## Answer (grilled with operator, 2026-09-26)
+
+No change on any of the four axes — kept, now grounded in verified industry
+comparison rather than first-principles assumption:
+
+- **Isolation boundary**: unix-user-per-agent + rootless podman, unchanged.
+  The vendors defaulting to microVMs/gVisor (E2B, fly.io, Modal, OpenAI's
+  cloud Codex) are defending against *untrusted, multi-tenant* code —
+  strangers' arbitrary code on shared infrastructure. This fleet's 4 agents
+  are the operator's own approved agents doing approved work, not that
+  threat model. Anthropic's own docs treat containers as a legitimate
+  middle tier.
+- **Container runtime**: podman, unchanged. No vendor or comparable system
+  in the research gave a reason to prefer a different rootless-capable
+  runtime.
+- **Orchestration**: scripts + `fleet.yaml` + tmux, unchanged. Nobody
+  examined runs Kubernetes/Nomad/a queue as an entry-level pattern for a
+  small fleet; Anthropic's own self-hosted-agent guidance recommends
+  something close in spirit to what's here. Heavier control planes only
+  appear at many-tenants-times-many-sandboxes scale.
+- **Session/interface model**: Discord + tmux (via `--channels`),
+  unchanged. Anthropic's own "channels" docs explicitly name and support
+  this exact pattern as first-party — not a hack — contrasted directly
+  against the ephemeral-per-mention pattern Copilot/Codex/Cursor/Devin use.
+  This fleet already runs on `--channels` (confirmed on the
+  `agent-runtime-reassessment` map), so this finding validates the current
+  setup rather than pointing at a migration.
+
+No follow-on task tickets needed — [Cutover swap per agent](06-cutover-swap-per-agent.md)
+is unblocked by this ticket's outcome; `create-agent.sh`'s provisioning
+needs no changes before it can run on the new VM.
+
+This decision is infrastructure-only — it does not touch any agent's
+persona/soul content (`docs/agents/personas/*.md`, the `agent.yaml`
+souls), which describe role and process, not runtime/container mechanics.
+
+## Addendum: Herdr checked specifically (2026-09-26)
+
+User surfaced [herdr.dev](https://herdr.dev) — a purpose-built persistent-
+session manager for AI coding agents — as a possible tmux replacement not
+covered by the original research. Checked directly (not from the marketing
+page): real, popular (40.8k GitHub stars), pre-1.0, org behind it 2 months
+old. Two things rule it out for this fleet specifically:
+
+1. **No Discord/Slack/Telegram integration at all** — it would sit
+   alongside Discord, not replace it. This fleet's `/approved` gate and
+   inter-agent handoff run entirely through Discord (`--channels`); Herdr
+   adds a dependency without removing one.
+2. **"Multi-machine" is a viewer, not migration** — each machine runs its
+   own independent Herdr server; sessions can't move between hosts; SSH is
+   still required. It would not have made this fleet's stop-old-start-new
+   cutover swap unnecessary.
+
+Full findings: `.scratch/contabo-migration/research/herdr-vs-tmux.md`.
+**Conclusion unchanged**: keep tmux. Separate, smaller, not-yet-decided
+note: the standalone `run-agent.sh` (`claude -p`, no Discord) path has no
+session-persistence story today, and that's closer to Herdr's actual
+strength — worth a look on its own if that usage grows, not part of this
+ticket.

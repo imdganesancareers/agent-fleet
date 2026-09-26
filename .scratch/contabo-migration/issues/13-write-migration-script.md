@@ -1,7 +1,7 @@
 # 13 — Write the migration script
 
 Type: task
-Status: open
+Status: resolved
 
 ## Question
 
@@ -35,6 +35,29 @@ isn't all-or-nothing:
 Drafting doesn't need the new VM to exist yet, but real testing does — full
 verification is blocked on [Confirm root SSH
 access](01-confirm-ssh-access.md).
+
+## Answer (2026-09-26)
+
+Written at `.scratch/contabo-migration/migrate.sh`. Matches agent-fleet's own
+script conventions (`log`/`ok`/`warn`/`die`, `create-agent.sh`'s exact
+invocation shape). Refined beyond the original spec per the secrets decision
+on [Transfer fleet secrets](05-transfer-fleet-secrets.md):
+
+- `setup` excludes `secrets/claude-token` from the rsync (fresh token minted
+  on the new VM instead) and prints the two manual follow-ups needed before
+  any cutover: run `setup-claude-token.sh` there, and replace each
+  `agent.yaml`'s `gitlab.token` with a freshly issued PAT.
+- `cutover <name>` **refuses to run** if the new VM has no Claude token yet,
+  or if its copy of `gitlab.token` still matches the old VM's value byte for
+  byte (i.e. wasn't actually replaced) — tested for real against the live
+  new VM (`13.140.190.206`): correctly refused with no Claude token present
+  yet, no state touched.
+- Requires typing the agent's name to confirm before stopping anything, and
+  fails loudly (never partially) if `create-agent.sh` fails on the new VM.
+
+Not yet run for real (`setup` hasn't been executed against the new VM —
+only the read-only guard checks have). Usage/argument-validation paths
+tested clean.
 
 ## Effect on other tickets
 

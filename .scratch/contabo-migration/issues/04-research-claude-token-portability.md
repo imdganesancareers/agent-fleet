@@ -36,3 +36,11 @@ Full findings + citations:
 **Effect on [Cutover swap per agent](06-cutover-swap-per-agent.md):** no
 re-minting step needed — rsync the token as part of [Transfer fleet
 secrets](05-transfer-fleet-secrets.md) and use it as-is.
+
+**Operator override (2026-09-26):** re-minting a fresh token on the new VM
+anyway, rather than reusing this finding. The research still stands — the
+old token would have worked fine, portability was never in question — this
+is a deliberate choice for clean separation between the two machines'
+credentials, not a correction of the finding above. See [Transfer fleet
+secrets](05-transfer-fleet-secrets.md) for the updated handling (GitLab PATs
+re-issued too; Discord fields unchanged).

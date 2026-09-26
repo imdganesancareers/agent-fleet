@@ -1,7 +1,7 @@
 # 12 — Resource governance: memory ceiling + scheduled disk pruning per agent
 
 Type: task
-Status: open
+Status: resolved
 
 ## Question
 
@@ -59,3 +59,47 @@ starts governed, not carrying the same gap forward):
   agent gets it by default, on both VMs, not just the new one) rather than
   a one-off manual VM setting — confirm that's the right home before
   implementing.
+
+## Answer
+
+Implemented in `create-agent.sh` as a new optional `resources:` block in `agent.yaml`
+(`resources.memory_max`, `resources.shared_images`), applied and verified live on all 4 agents on
+**this VM** (operator's call — fix the box that's actually running production today, not just the new
+one; the script itself reaches the new VM automatically via the next `git pull`).
+
+**Memory ceiling**: systemd user-slice `MemoryMax=` drop-in at
+`/etc/systemd/system/user-<uid>.slice.d/50-memory-max.conf`, applied right after `loginctl
+enable-linger` (needs the unix user to exist first). Sized tiered, not flat: `aruvii-developer` /
+`aruvii-qa` at 6G (docker builds + compose stacks), `aruvii-analyst` / `aruvi-spec-reviewer` at 3G
+(read/text work, no builds). Verified live via `systemctl show user-<uid>.slice -p MemoryMax` on all 4.
+
+**Disk pruning**: a `systemd --user` timer (`podman-prune.timer`, daily) running
+`podman container prune -f` + `podman image prune -f` (dangling only, safe mid-build) on every agent,
+enabled unconditionally (harmless on agents that don't build). **A third step was added mid-ticket that
+turned out to be the actual fix that mattered**: `podman container prune -f` does **not** remove
+buildah's own leftover "working containers" from an interrupted or failed build — confirmed by testing
+live on `aruvii-developer`, which had **48 of these**, none touched by the normal prune, pinning their
+image layers in place. `buildah rm --all` is what actually cleared them. Added as a third `ExecStart`,
+guarded by `pgrep -f "buildah|podman.*build"` first so a daily timer can't rip out a container mid-build.
+
+**Real numbers, this VM, verified before/after**: `aruvii-developer`'s podman store dropped from
+**7.6G → 488M** the moment the 48 buildah containers were removed and the now-unpinned dangling layers
+(including the stale `maven` image below) were pruned. `aruvii-qa` is at 962M post-cleanup.
+
+**Shared base-image store**: implemented via podman's `additionalimagestores` (a root-populated,
+read-only store at `/var/lib/podman-shared-images`, referenced from each opted-in agent's
+`~/.config/containers/storage.conf`). Opt-in per agent via `resources.shared_images` in `agent.yaml` —
+wired for `aruvii-developer` and `aruvii-qa` only (the two that build/run the same `agent-platform`
+compose stack). Populated with 8 images, 1.5G total, shared once instead of duplicated across both
+agents' own stores.
+
+**A real bug caught mid-implementation, not from the ticket's own investigation**: the ticket's original
+image list (copied into the first draft of `shared_images`) included `maven:3.9.16-eclipse-temurin-25`.
+Checked the actual repo instead of trusting that list — the project is 100% Gradle now
+(`build.gradle.kts`, no `pom.xml` anywhere); a Makefile comment confirms the last Maven usage
+(a Checkstyle-via-throwaway-POM workaround) was removed in #440. The image was a genuine stale leftover.
+Corrected `shared_images` to the real, currently-referenced base images, verified directly against
+`Dockerfile`, `docker-compose.yml`, and the Testcontainers IT setup: `eclipse-temurin:25-jdk` /
+`25-jre-jammy`, `node:22-alpine`, `nginx:1.27-alpine`, `curlimages/curl:8.11.0`, `redis:7-alpine`,
+`pgvector/pgvector:pg16`, `testcontainers/ryuk:0.14.0`. Removed the stale `maven` image from
+`aruvii-developer`'s own store directly as part of the same cleanup.

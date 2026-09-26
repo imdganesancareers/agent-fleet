@@ -170,6 +170,16 @@ permission_mode = str(cfg.get('permission_mode') or '').strip()
 if permission_mode and permission_mode not in PERMISSION_MODES:
     sys.exit(f"permission_mode must be one of {sorted(PERMISSION_MODES)} or omitted")
 
+# --- resources: optional per-agent governance (ticket 12, contabo-migration map) ---
+resources = cfg.get('resources') or {}
+memory_max = str(resources.get('memory_max') or '').strip()
+if memory_max and not re.fullmatch(r'[0-9]+[KMGT]|infinity', memory_max):
+    sys.exit("resources.memory_max must look like 6G, 512M, or 'infinity'")
+shared_images = resources.get('shared_images') or []
+if not isinstance(shared_images, list) or not all(isinstance(i, str) for i in shared_images):
+    sys.exit("resources.shared_images must be a list of image refs")
+open(f"{stage}/shared-images.list", 'w').write("".join(i.strip() + "\n" for i in shared_images if i.strip()))
+
 scalars = {
     'NAME': name, 'REPO': repo, 'REPO_DIR': repo_dir,
     'GIT_NAME': get(cfg, 'git.author_name'),
@@ -180,6 +190,7 @@ scalars = {
     'APP_PORT': str(app_port),
     'MODEL': model,
     'PERMISSION_MODE': permission_mode,
+    'MEMORY_MAX': memory_max,
 }
 with open(f"{stage}/env.sh", 'w') as f:
     for k, v in scalars.items():
@@ -310,6 +321,115 @@ chmod 750 "$HOME_DIR"
 # (empty XDG_RUNTIME_DIR there), and keeps agent containers running unattended
 loginctl enable-linger "$AGENT" 2>/dev/null || true
 ok " lingering enabled (rootless containers)"
+
+# ---------- resource governance (ticket 12, contabo-migration map) ----------
+# No ceiling existed before this — a container OOM under aruvii-developer on
+# 2026-08-29 took systemd-journald down with it. A systemd user-slice cap bounds
+# everything the agent runs (container or not), not just individual containers.
+if [[ -n "${MEMORY_MAX:-}" ]]; then
+  AGENT_UID=$(id -u "$AGENT")
+  SLICE_DIR="/etc/systemd/system/user-${AGENT_UID}.slice.d"
+  mkdir -p "$SLICE_DIR"
+  cat > "$SLICE_DIR/50-memory-max.conf" <<EOF
+[Slice]
+MemoryMax=$MEMORY_MAX
+EOF
+  systemctl daemon-reload
+  systemctl set-property "user-${AGENT_UID}.slice" "MemoryMax=$MEMORY_MAX" 2>/dev/null || true
+  ok " memory ceiling: $MEMORY_MAX (user-${AGENT_UID}.slice)"
+fi
+
+# Daily prune of dangling images + stopped containers — nothing kept unless in use.
+# Dangling-only (not a full `system prune -af`): safe to run mid-build, never touches
+# an image or container actually in use.
+as_agent 'mkdir -p ~/.config/systemd/user'
+cat > "$HOME_DIR/.config/systemd/user/podman-prune.service" <<'EOF'
+[Unit]
+Description=Prune unused podman containers and dangling images
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/podman container prune -f
+ExecStart=/usr/bin/podman image prune -f
+# Leftover buildah working containers from an interrupted/failed build pin their
+# image layers in place — `podman container prune` does NOT remove these (confirmed:
+# 48 such containers survived it on a real agent, worth ~7GB). Skip if a build looks
+# to be running right now, so a daily timer can't rip out a container mid-build.
+ExecStart=/bin/sh -c 'pgrep -f "buildah|podman.*build" >/dev/null || /usr/bin/buildah rm --all'
+EOF
+cat > "$HOME_DIR/.config/systemd/user/podman-prune.timer" <<'EOF'
+[Unit]
+Description=Daily podman prune
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+chown "$AGENT:$AGENT" "$HOME_DIR/.config/systemd/user/podman-prune.service" "$HOME_DIR/.config/systemd/user/podman-prune.timer"
+as_agent 'export XDG_RUNTIME_DIR=/run/user/$(id -u); systemctl --user daemon-reload; systemctl --user enable --now podman-prune.timer'
+ok " daily prune timer enabled (dangling images + stopped containers)"
+
+# Shared read-only base-image store (opt-in per-agent via resources.shared_images) —
+# lets agents that build/run the same stack (e.g. aruvii-developer + aruvii-qa)
+# reference one shared copy of common base images instead of each keeping their own.
+if [[ -s "$STAGE/shared-images.list" ]]; then
+  SHARED_STORE=/var/lib/podman-shared-images
+  mkdir -p "$SHARED_STORE"
+  while IFS= read -r IMG; do
+    [[ -n "$IMG" ]] || continue
+    podman --root "$SHARED_STORE" image exists "$IMG" 2>/dev/null \
+      || { log "pulling $IMG into shared store"; podman --root "$SHARED_STORE" pull "$IMG"; }
+  done < "$STAGE/shared-images.list"
+  chmod -R a+rX "$SHARED_STORE"
+  as_agent 'mkdir -p ~/.config/containers'
+  python3 - "$HOME_DIR/.config/containers/storage.conf" "$SHARED_STORE" <<'PY'
+import tomllib, sys
+
+path, shared = sys.argv[1], sys.argv[2]
+try:
+    with open(path, 'rb') as f:
+        cfg = tomllib.load(f)
+except FileNotFoundError:
+    cfg = {}
+
+opts = cfg.setdefault('storage', {}).setdefault('options', {})
+stores = opts.get('additionalimagestores') or []
+if shared not in stores:
+    stores.append(shared)
+opts['additionalimagestores'] = stores
+
+def fmt_val(v):
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, int):
+        return str(v)
+    if isinstance(v, str):
+        return '"' + v.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    if isinstance(v, list):
+        return "[" + ", ".join(fmt_val(x) for x in v) + "]"
+    raise TypeError(f"unsupported TOML value type for this minimal writer: {type(v)}")
+
+out = []
+def write_table(prefix, d):
+    scalars_here = {k: v for k, v in d.items() if not isinstance(v, dict)}
+    out.append(f"[{prefix}]")
+    for k, v in scalars_here.items():
+        out.append(f"{k} = {fmt_val(v)}")
+    out.append("")
+    for k, v in d.items():
+        if isinstance(v, dict):
+            write_table(f"{prefix}.{k}", v)
+for table, kv in cfg.items():
+    write_table(table, kv)
+with open(path, 'w') as f:
+    f.write("\n".join(out).rstrip() + "\n")
+PY
+  chown "$AGENT:$AGENT" "$HOME_DIR/.config/containers/storage.conf"
+  ok " shared image store wired ($SHARED_STORE)"
+fi
 
 # `podman build` (buildah) defaults RUN-step nofile to 1024:1024 regardless of
 # the caller's ulimit — only containers.conf's default_ulimits or an explicit
