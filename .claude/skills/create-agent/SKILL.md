@@ -43,11 +43,12 @@ Invoke the `mattpocock-skills:grilling` and `mattpocock-skills:domain-modeling`
 skills, then grill the agent's identity: `name` (≤ 20 chars, lowercase; becomes unix
 user `agent-<name>` and the tmux session name — **VM-global across all fleets**,
 and the script refuses a name another fleet holds), persona scalars (display name,
-pronouns, emoji), `purpose`, `soul`, `guardrails`.
+pronouns, emoji), `purpose`, soul, `guardrails`.
 
 The soul is multi-paragraph markdown — role, working process, tone, what it owns and
-what it never touches. Keep grilling until it holds all four; a one-line soul is an
-unfinished interview. Seed guardrails from the defaults in
+what it never touches — written to `SOUL.md` next to `agent.yaml`, not into the YAML
+file itself (see [`agent-yaml.md`](agent-yaml.md)). Keep grilling until it holds all
+four; a one-line soul is an unfinished interview. Seed guardrails from the defaults in
 [`agent-yaml.md`](agent-yaml.md) § Guardrails and grill for agent-specific additions;
 the ask-in-Discord-before-disruptive rule is non-negotiable and stays in verbatim.
 

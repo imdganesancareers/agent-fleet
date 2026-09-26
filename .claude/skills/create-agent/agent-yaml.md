@@ -1,9 +1,11 @@
 # agent.yaml — schema and example
 
-One file = one agent, at `<fleet>/agents/<name>/agent.yaml`. Contains secrets:
-`chmod 600`, keep it in the fleet dir outside this repo, never commit. Consumed
-by `create-agent.sh <fleet> <name>` (root, rerunnable — reruns amend config and
-restart the session).
+One agent = `<fleet>/agents/<name>/agent.yaml` (infra, secrets: `chmod 600`, keep it in the fleet dir
+outside this repo, never commit) **plus** `<fleet>/agents/<name>/SOUL.md` (the role's actual soul —
+real markdown, not a YAML string field, so it's a plain file diff against a portable persona doc
+elsewhere rather than YAML-string extraction; see `.scratch/soul-md-split` in this repo for why).
+Consumed by `create-agent.sh <fleet> <name>` (root, rerunnable — reruns amend config and restart the
+session).
 
 ## Fields
 
@@ -12,7 +14,6 @@ restart the session).
 | `name` | Agent id. Unix user `agent-<name>`, tmux session `<name>`. Lowercase, ≤ 20 chars, unique across **all** fleets on the VM |
 | `persona.display_name` / `.pronouns` / `.emoji` | Freeform scalars, rendered verbatim into the agent's CLAUDE.md |
 | `purpose` | One paragraph: what this agent is for |
-| `soul` | Multi-paragraph markdown: role, process, tone, ownership |
 | `guardrails` | Multi-paragraph markdown; starts from the defaults below |
 | `skills` | Optional list of fleet skill names (dirs under `skills/` in this repo); rendered root-owned into the agent's `~/.claude/skills` and advertised in its CLAUDE.md |
 | `enforced` | Optional list of hard guardrails `{tools, pattern, reason}`; compiled to `/etc/claude-code/fleet-policy/agent-<name>.json` for the machine-wide fleet-guard hook (see below) |
@@ -27,6 +28,10 @@ restart the session).
 | `discord.operator_user_id` | Your snowflake → `access.json` `allowFrom`, `dmPolicy: allowlist` |
 | `discord.channels[]` | `id` (channel snowflake) + `require_mention` (default `true`) |
 
+**Soul lives in a companion file, not a field**: `<fleet>/agents/<name>/SOUL.md` — multi-paragraph
+markdown, role/process/tone/ownership, same content that used to be the `soul:` field. `chmod 600` it
+the same as `agent.yaml`; `create-agent.sh`/`update-agent.sh` refuse to run without it.
+
 ## Example
 
 ```yaml
@@ -38,15 +43,6 @@ persona:
 purpose: >
   Implements approved issues in the aruvii backend, test-first. Owns nothing
   outside the modules it is scoped to.
-soul: |
-  ## Role
-  Backend engineer on the aruvii platform...
-
-  ## Process
-  Pick up an assigned issue, write the failing test first...
-
-  ## Tone
-  Direct, brief, no filler...
 guardrails: |
   # (defaults below, plus agent-specific additions)
 skills:
@@ -69,6 +65,19 @@ discord:
   channels:
     - id: "444444444444444444"
       require_mention: true
+```
+
+And its companion `SOUL.md`, same directory:
+
+```markdown
+## Role
+Backend engineer on the aruvii platform...
+
+## Process
+Pick up an assigned issue, write the failing test first...
+
+## Tone
+Direct, brief, no filler...
 ```
 
 ## Guardrails

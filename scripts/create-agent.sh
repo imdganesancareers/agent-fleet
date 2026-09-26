@@ -46,6 +46,11 @@ chmod 700 "$FLEET_DIR/secrets"
 YAML="$FLEET_DIR/agents/$CLI_NAME/agent.yaml"
 [[ -f $YAML ]] || die "no recipe at $YAML — author it with the /create-agent skill"
 chmod 600 "$YAML"
+# soul lives in its own file next to agent.yaml — real markdown, not a YAML string field, so
+# comparing it against a portable persona doc elsewhere is a plain file diff (see .scratch/soul-md-split)
+SOUL_MD="$FLEET_DIR/agents/$CLI_NAME/SOUL.md"
+[[ -s $SOUL_MD ]] || die "no SOUL.md at $SOUL_MD — author the role's soul there, next to agent.yaml"
+chmod 600 "$SOUL_MD"
 # fail fast: the launch is impossible without the fleet's shared Claude token
 CLAUDE_TOKEN_FILE="$FLEET_DIR/secrets/claude-token"
 [[ -s $CLAUDE_TOKEN_FILE ]] \
@@ -97,11 +102,14 @@ ok " enforcement layer (/etc/claude-code) current"
 # ---------- parse agent.yaml, validate, render config files ----------
 STAGE=$(mktemp -d); chmod 700 "$STAGE"; trap 'rm -rf "$STAGE"' EXIT
 
-python3 - "$YAML" "$STAGE" "$CLI_NAME" "$ROOT" <<'PY' || die "agent.yaml invalid"
+python3 - "$YAML" "$STAGE" "$CLI_NAME" "$ROOT" "$SOUL_MD" <<'PY' || die "agent.yaml invalid"
 import json, os, re, sys, urllib.parse, yaml
 
-path, stage, cli_name, root = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+path, stage, cli_name, root, soul_md_path = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 cfg = yaml.safe_load(open(path))
+soul_text = open(soul_md_path).read().strip()
+if not soul_text:
+    sys.exit(f"{soul_md_path} is empty")
 
 def get(d, dotted, req=True):
     cur = d
@@ -278,7 +286,7 @@ minutes, post a progress update there.
 
 {get(cfg, 'purpose').strip()}
 
-{get(cfg, 'soul').strip()}
+{soul_text}
 
 {get(cfg, 'guardrails').strip()}
 {app_md}{skills_md}""")
