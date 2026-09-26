@@ -156,22 +156,6 @@ model = str(cfg.get('model') or '').strip()
 if model and not re.fullmatch(r'[a-z][a-z0-9.-]*', model):
     sys.exit("model must be an alias (opus/sonnet/fable/haiku) or a full model id")
 
-# --- permission_mode: one of claude's real modes; blank = bypassPermissions (today's default) ---
-PERMISSION_MODES = {'acceptEdits', 'auto', 'bypassPermissions', 'manual', 'dontAsk', 'plan'}
-permission_mode = str(cfg.get('permission_mode') or '').strip()
-if permission_mode and permission_mode not in PERMISSION_MODES:
-    sys.exit(f"permission_mode must be one of {sorted(PERMISSION_MODES)} or omitted")
-
-# --- soul_from_repo: path to a portable persona file INSIDE the agent's own repo,
-# fetched fresh from origin/master on every render (see below, after the clone) rather
-# than duplicated as literal YAML text. `soul:` still carries this fleet's own wiring
-# (Discord, team/handover, commit attribution) and is rendered alongside it, not replaced.
-soul_from_repo = str(cfg.get('soul_from_repo') or '').strip()
-if soul_from_repo:
-    if soul_from_repo.startswith('/') or '..' in soul_from_repo.split('/'):
-        sys.exit("soul_from_repo must be a relative path inside the repo, no '..'")
-    open(f"{stage}/soul_from_repo.path", 'w').write(soul_from_repo)
-
 scalars = {
     'NAME': name, 'REPO': repo, 'REPO_DIR': repo_dir,
     'GIT_NAME': get(cfg, 'git.author_name'),
@@ -181,7 +165,6 @@ scalars = {
     'DISPLAY_NAME': get(cfg, 'persona.display_name'),
     'APP_PORT': str(app_port),
     'MODEL': model,
-    'PERMISSION_MODE': permission_mode,
 }
 with open(f"{stage}/env.sh", 'w') as f:
     for k, v in scalars.items():
@@ -217,16 +200,6 @@ for s in skills:
         sys.exit(f"unknown fleet skill: {s} (no skills/{s}/SKILL.md)")
 open(f"{stage}/skills.list", 'w').write("".join(s + "\n" for s in skills))
 
-def skill_description(name):
-    # Pulls the one-line `description:` out of a fleet skill's own frontmatter
-    # so CLAUDE.md can state its trigger, not just its name — a skill picked
-    # from a bare name list is a skill the agent forgets to reach for.
-    text = open(f"{root}/skills/{name}/SKILL.md").read()
-    m = re.match(r'^---\r?\n(.*?\r?\n)---\r?\n', text, re.DOTALL)
-    if not m:
-        return ''
-    return str((yaml.safe_load(m.group(1)) or {}).get('description') or '')
-
 # --- enforced: hard guardrails compiled to fleet-guard policy ---
 rules = cfg.get('enforced') or []
 if not isinstance(rules, list):
@@ -255,9 +228,8 @@ home_chat = str(channels[0]['id'])
 skills_md = ""
 if skills:
     skills_md = ("\n## Fleet skills granted\n\nInstalled at `~/.claude/skills` "
-                 "— invoke a skill yourself, unprompted, whenever its trigger "
-                 "below fits; don't wait to be told by name:\n"
-                 + "".join(f"- **{s}** — {skill_description(s)}\n" for s in skills))
+                 "— invoke the matching skill when the task fits:\n"
+                 + "".join(f"- {s}\n" for s in skills))
 app_md = ""
 if app_port:
     url = f"https://{app.get('host')}" if app.get('host') else f"http://localhost:{app_port}"
@@ -298,8 +270,6 @@ minutes, post a progress update there.
 ## Purpose
 
 {get(cfg, 'purpose').strip()}
-
-{"{{SOUL_FROM_REPO}}" if soul_from_repo else ""}
 
 {get(cfg, 'soul').strip()}
 
@@ -446,30 +416,6 @@ else
   ok " cloned to $REPO_PATH"
 fi
 
-# ---------- soul_from_repo: fetch the persona fresh from origin/master ----------
-# Deliberately reads origin/master directly (git show, no checkout) rather than trusting
-# whatever's currently checked out in $REPO_PATH — that could be a feature branch mid-story,
-# or a clone nobody's pulled in days. Every relaunch/reconcile gets the canonical version,
-# regardless of what the agent's own working tree is doing.
-if [[ -f "$STAGE/soul_from_repo.path" ]]; then
-  SOUL_PATH=$(cat "$STAGE/soul_from_repo.path")
-  log "fetching persona from origin/master: $SOUL_PATH"
-  as_agent "cd '$REPO_PATH' && git fetch origin master --quiet" \
-    || die "could not fetch origin/master in $REPO_PATH"
-  as_agent "cd '$REPO_PATH' && git show origin/master:'$SOUL_PATH'" > "$STAGE/persona_content.md" \
-    || die "'$SOUL_PATH' not found on origin/master of $REPO_PATH — check soul_from_repo in agent.yaml"
-  python3 - "$STAGE/CLAUDE.md" "$STAGE/persona_content.md" <<'PY'
-import sys
-claude_md_path, persona_path = sys.argv[1], sys.argv[2]
-text = open(claude_md_path).read()
-persona = open(persona_path).read()
-if "{{SOUL_FROM_REPO}}" not in text:
-    sys.exit("internal error: {{SOUL_FROM_REPO}} placeholder missing from rendered CLAUDE.md")
-open(claude_md_path, 'w').write(text.replace("{{SOUL_FROM_REPO}}", persona.strip()))
-PY
-  ok " persona embedded from $SOUL_PATH (origin/master, fetched fresh)"
-fi
-
 # ---------- identity: root-owned, agent-read-only ----------
 install -o root -g root -m 0444 "$STAGE/CLAUDE.md"      "$HOME_DIR/.claude/CLAUDE.md"
 install -o root -g root -m 0444 "$STAGE/settings.json"  "$HOME_DIR/.claude/settings.json"
@@ -592,16 +538,9 @@ APP_ENV=""
 [[ ${APP_PORT:-} ]] && APP_ENV="ARUVII_PORT_BASE=$APP_PORT ARUVII_HTTP_PORT=$APP_PORT "
 MODEL_FLAG=""
 [[ ${MODEL:-} ]] && MODEL_FLAG="--model $MODEL "
-# permission_mode blank -> today's default (bypassPermissions via the dangerous-mode flag);
-# set -> --permission-mode <mode> instead, so a narrower mode never needs the dangerous flag too.
-if [[ ${PERMISSION_MODE:-} && $PERMISSION_MODE != "bypassPermissions" ]]; then
-  PERMISSION_FLAGS="--permission-mode $PERMISSION_MODE"
-else
-  PERMISSION_FLAGS="--dangerously-skip-permissions"
-fi
 log "restarting tmux session '$NAME'"
 as_agent "tmux kill-session -t '$NAME' 2>/dev/null" || true
-as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static DISCORD_ALLOWED_BOT_IDS=$PEER_BOT_IDS ${APP_ENV}claude ${MODEL_FLAG}$PERMISSION_FLAGS --channels plugin:$PLUGIN'"
+as_agent "cd '$REPO_PATH' && tmux new-session -d -s '$NAME' 'CLAUDE_CODE_OAUTH_TOKEN=\$(cat ~/.claude/claude-token) DISCORD_ACCESS_MODE=static DISCORD_ALLOWED_BOT_IDS=$PEER_BOT_IDS ${APP_ENV}claude ${MODEL_FLAG}--dangerously-skip-permissions --channels plugin:$PLUGIN'"
 ok " session '$NAME' running as $AGENT in $REPO_PATH (authenticated via fleet token)"
 
 # ---------- registry ----------
