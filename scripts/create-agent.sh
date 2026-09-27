@@ -74,8 +74,14 @@ fi
 # ---------- host prerequisites (the only apt step) ----------
 log "host prerequisites"
 missing=()
-for p in tmux git curl unzip; do command -v "$p" >/dev/null || missing+=("$p"); done
+for p in tmux git curl unzip make; do command -v "$p" >/dev/null || missing+=("$p"); done
 python3 -c 'import yaml' 2>/dev/null || missing+=(python3-yaml)
+# Plain system nodejs (any modern version) -- NOT the project's own pinned Node, which each
+# agent bootstraps itself via nvm when it needs it. This is here only so plugin hooks that
+# shell out to `node` (e.g. i-have-adhd's SessionStart check) don't silently fail on an agent
+# that hasn't bootstrapped the project toolchain yet -- confirmed live: 3 of 4 agents hit
+# "node: not found" from that hook before this was added.
+command -v node >/dev/null || missing+=(nodejs)
 # rootless container runtime — fleet infrastructure for every agent (see
 # .scratch/agent-runtime-and-guardrails/issues/02): podman answers as `docker`
 command -v podman >/dev/null || missing+=(podman podman-docker uidmap slirp4netns passt catatonit)
