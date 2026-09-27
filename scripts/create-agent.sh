@@ -226,6 +226,18 @@ for s in skills:
         sys.exit(f"unknown fleet skill: {s} (no skills/{s}/SKILL.md)")
 open(f"{stage}/skills.list", 'w').write("".join(s + "\n" for s in skills))
 
+# --- plugin_skills: real Claude Code plugins, installed fresh each run, never copied
+# into this repo. Distinct from `skills` (fleet-authored, no public source, copied
+# from $ROOT/skills/<name>). ---
+plugin_skills = cfg.get('plugin_skills') or []
+if not isinstance(plugin_skills, list):
+    sys.exit("plugin_skills must be a list of {name, marketplace, marketplace_name, always_on?}")
+with open(f"{stage}/plugin-skills.list", 'w') as f:
+    for i, p in enumerate(plugin_skills):
+        if not isinstance(p, dict) or not p.get('name') or not p.get('marketplace') or not p.get('marketplace_name'):
+            sys.exit(f"plugin_skills[{i}] needs name, marketplace (owner/repo), and marketplace_name")
+        f.write(f"{p['name']}\t{p['marketplace']}\t{p['marketplace_name']}\t{p.get('always_on') or ''}\n")
+
 # --- enforced: hard guardrails compiled to fleet-guard policy ---
 rules = cfg.get('enforced') or []
 if not isinstance(rules, list):
@@ -556,6 +568,25 @@ install -o root -g root -m 0444 "$STAGE/CLAUDE.md"      "$HOME_DIR/.claude/CLAUD
 install -o root -g root -m 0444 "$STAGE/settings.json"  "$HOME_DIR/.claude/settings.json"
 install -o root -g root -m 0400 "$YAML"                 "$HOME_DIR/agent.yaml"
 ok " identity rendered (CLAUDE.md, settings.json, agent.yaml archive — root-owned)"
+
+# ---------- plugin skills: real Claude Code plugins, installed fresh, never copied here ----------
+# `claude plugin install` rewrites ~/.claude/settings.json itself (adding enabledPlugins /
+# extraKnownMarketplaces while preserving the keys rendered above) -- confirmed live: it
+# replaces the file rather than editing in place, which works because the agent owns the
+# containing directory even though the file itself was just installed root-owned above.
+if [[ -s $STAGE/plugin-skills.list ]]; then
+  while IFS=$'\t' read -r PNAME PMARKET PMARKET_NAME PALWAYS_ON; do
+    [[ -n $PNAME ]] || continue
+    as_agent "claude plugin marketplace add '$PMARKET'" \
+      || die "plugin marketplace add failed: $PMARKET"
+    as_agent "claude plugin install '$PNAME@$PMARKET_NAME' --scope user" \
+      || die "plugin install failed: $PNAME@$PMARKET_NAME"
+    if [[ -n $PALWAYS_ON ]]; then
+      as_agent "touch ~/.claude/$PALWAYS_ON"
+    fi
+    ok " plugin skill installed: $PNAME@$PMARKET_NAME"
+  done < "$STAGE/plugin-skills.list"
+fi
 
 # ---------- fleet skills (root-owned, reconciled) + enforced policy ----------
 rm -rf "$HOME_DIR/.claude/skills"
