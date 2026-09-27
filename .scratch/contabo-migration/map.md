@@ -121,6 +121,9 @@ agent has answered a live Discord mention from there.
   confirmation prompt, and a systemd `--user` D-Bus race on a brand-new user) plus a third, unrelated
   one (the new VM's `origin` had been silently repointed at a personal fork). Also swapped `show-me`/
   `i-have-adhd` from file-copies to real Claude Code plugin installs (see Notes) — verified on all 4.
+- [Stand up Caddy on the new VM](issues/07-setup-proxy-new-vm.md) — ran `setup-proxy.sh`, both vhosts
+  (`dev.aruvii.ai`, `qa.aruvii.ai`) rendered correctly with the offline-page fallback, Caddy active.
+  Full TLS/offline-page verification waits on DNS (ticket 08).
 - [Resource governance](issues/12-resource-governance.md) — new `resources:` block in `agent.yaml`
   (`memory_max`, `shared_images`), implemented in `create-agent.sh`, applied and verified live on all 4
   agents on **this** VM (fixes the box actually running today; the script itself reaches the new VM on
