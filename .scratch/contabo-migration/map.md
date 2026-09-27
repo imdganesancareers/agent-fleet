@@ -128,6 +128,11 @@ agent has answered a live Discord mention from there.
   propagation confirmed on 3 independent resolvers, real Let's Encrypt certs issued for both hostnames
   after forcing a Caddy restart (its own retry had backed off for hours). Both correctly serve the
   offline-page fallback — no app stack deployed there yet, which is expected at this point.
+- [Verify the migration end to end](issues/09-verify-migration.md) — `list-agent.sh` reports all 4
+  active and drift-free. 2 of 4 agents (analyst, developer) confirmed via real live Discord activity;
+  the other 2 (qa, spec-reviewer) have healthy Discord processes but no test mention sent yet — operator
+  called this sufficient to resolve, deferred as a quick non-blocking follow-up. The live-app-over-HTTPS
+  check is also deferred — that needs a real deploy, which is developer/qa's own job, not this map's.
 - [Resource governance](issues/12-resource-governance.md) — new `resources:` block in `agent.yaml`
   (`memory_max`), implemented in `create-agent.sh`, applied and verified live on all 4 agents. Tiered
   memory ceiling (6G dev/qa, 3G analyst/spec-reviewer) via a systemd user-slice drop-in; a daily prune
