@@ -399,10 +399,19 @@ chown "$AGENT:$AGENT" "$HOME_DIR/.config/systemd/user/podman-prune.service" "$HO
 as_agent 'export XDG_RUNTIME_DIR=/run/user/$(id -u); systemctl --user daemon-reload; systemctl --user enable --now podman-prune.timer'
 ok " daily prune timer enabled (dangling images + stopped containers)"
 
-# Shared read-only base-image store (opt-in per-agent via resources.shared_images) —
-# lets agents that build/run the same stack (e.g. aruvii-developer + aruvii-qa)
-# reference one shared copy of common base images instead of each keeping their own.
+# storage.conf: driver must be explicit on every agent, not left to podman's own
+# auto-pick. Confirmed live (2026-09-27): an unset driver auto-picked something that
+# fails every container with a resolv.conf OCI error, reproduced on a fresh isolated
+# test user AND on aruvii-qa; the same failure on aruvii-developer was originally
+# "fixed" with `mount_program = fuse-overlayfs`, but a clean isolated test proved
+# native overlay works fine here once `driver = "overlay"` is explicit -- the
+# fuse-overlayfs mount_program was unnecessary and costs real Testcontainers I/O
+# performance. Don't add mount_program here; only the explicit driver line is needed.
+SHARED_STORE=""
 if [[ -s "$STAGE/shared-images.list" ]]; then
+  # Shared read-only base-image store (opt-in per-agent via resources.shared_images) —
+  # lets agents that build/run the same stack (e.g. aruvii-developer + aruvii-qa)
+  # reference one shared copy of common base images instead of each keeping their own.
   SHARED_STORE=/var/lib/podman-shared-images
   mkdir -p "$SHARED_STORE"
   while IFS= read -r IMG; do
@@ -411,8 +420,9 @@ if [[ -s "$STAGE/shared-images.list" ]]; then
       || { log "pulling $IMG into shared store"; podman --root "$SHARED_STORE" pull "$IMG"; }
   done < "$STAGE/shared-images.list"
   chmod -R a+rX "$SHARED_STORE"
-  as_agent 'mkdir -p ~/.config/containers'
-  python3 - "$HOME_DIR/.config/containers/storage.conf" "$SHARED_STORE" <<'PY'
+fi
+as_agent 'mkdir -p ~/.config/containers'
+python3 - "$HOME_DIR/.config/containers/storage.conf" "$SHARED_STORE" <<'PY'
 import tomllib, sys
 
 path, shared = sys.argv[1], sys.argv[2]
@@ -422,11 +432,15 @@ try:
 except FileNotFoundError:
     cfg = {}
 
-opts = cfg.setdefault('storage', {}).setdefault('options', {})
-stores = opts.get('additionalimagestores') or []
-if shared not in stores:
-    stores.append(shared)
-opts['additionalimagestores'] = stores
+storage = cfg.setdefault('storage', {})
+storage['driver'] = 'overlay'
+
+if shared:
+    opts = storage.setdefault('options', {})
+    stores = opts.get('additionalimagestores') or []
+    if shared not in stores:
+        stores.append(shared)
+    opts['additionalimagestores'] = stores
 
 def fmt_val(v):
     if isinstance(v, bool):
@@ -454,7 +468,9 @@ for table, kv in cfg.items():
 with open(path, 'w') as f:
     f.write("\n".join(out).rstrip() + "\n")
 PY
-  chown "$AGENT:$AGENT" "$HOME_DIR/.config/containers/storage.conf"
+chown "$AGENT:$AGENT" "$HOME_DIR/.config/containers/storage.conf"
+ok " storage.conf: driver=overlay set explicitly (no more auto-pick failures)"
+if [[ -n "$SHARED_STORE" ]]; then
   ok " shared image store wired ($SHARED_STORE)"
 fi
 
