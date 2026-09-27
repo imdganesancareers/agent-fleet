@@ -124,6 +124,10 @@ agent has answered a live Discord mention from there.
 - [Stand up Caddy on the new VM](issues/07-setup-proxy-new-vm.md) — ran `setup-proxy.sh`, both vhosts
   (`dev.aruvii.ai`, `qa.aruvii.ai`) rendered correctly with the offline-page fallback, Caddy active.
   Full TLS/offline-page verification waits on DNS (ticket 08).
+- [Repoint DNS](issues/08-repoint-dns.md) — operator repointed both A records to the new VM's IP,
+  propagation confirmed on 3 independent resolvers, real Let's Encrypt certs issued for both hostnames
+  after forcing a Caddy restart (its own retry had backed off for hours). Both correctly serve the
+  offline-page fallback — no app stack deployed there yet, which is expected at this point.
 - [Resource governance](issues/12-resource-governance.md) — new `resources:` block in `agent.yaml`
   (`memory_max`), implemented in `create-agent.sh`, applied and verified live on all 4 agents. Tiered
   memory ceiling (6G dev/qa, 3G analyst/spec-reviewer) via a systemd user-slice drop-in; a daily prune
