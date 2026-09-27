@@ -114,6 +114,13 @@ agent has answered a live Discord mention from there.
   VM (operator ran `setup-claude-token.sh` interactively, verified present/`0600`/correct prefix). GitLab
   tokens: plan changed mid-ticket — reused as-is instead of re-issued (see Notes); `migrate.sh cutover`'s
   "must differ" check downgraded from a hard fail to a warning to match.
+- [Cutover: swap each agent](issues/06-cutover-swap-per-agent.md) — all 4 agents moved, one at a time,
+  verified clean on both sides (no session left on the old VM, all 4 live on the new VM);
+  `aruvii-analyst` confirmed answering a real Discord mention from the new VM mid-cutover. Found and
+  fixed 2 real bugs specific to first-time user creation (a stdin-starvation bug in `migrate.sh`'s
+  confirmation prompt, and a systemd `--user` D-Bus race on a brand-new user) plus a third, unrelated
+  one (the new VM's `origin` had been silently repointed at a personal fork). Also swapped `show-me`/
+  `i-have-adhd` from file-copies to real Claude Code plugin installs (see Notes) — verified on all 4.
 - [Resource governance](issues/12-resource-governance.md) — new `resources:` block in `agent.yaml`
   (`memory_max`, `shared_images`), implemented in `create-agent.sh`, applied and verified live on all 4
   agents on **this** VM (fixes the box actually running today; the script itself reaches the new VM on
@@ -131,6 +138,23 @@ agent has answered a live Discord mention from there.
   Worth a sanity check (`git remote -v`) before any future push from this checkout, since it's easy for
   this to silently drift again while working across two different GitLab/GitHub repos in the same
   session.
+
+- **The new VM's `agent-fleet` checkout had its `origin` silently pointed at `chiyanram/agent-fleet`
+  (a personal fork) instead of `imdganesancareers/agent-fleet`**, with a correctly-pointing `upstream`
+  remote alongside it — found because `migrate.sh setup` kept reporting "already up to date" while the
+  actual GitHub repo had moved on. Likely someone (ram) SSHed into the new VM directly and reconfigured
+  it for their own dev workflow. Fixed by pointing `origin` back at the real repo and fast-forwarding.
+  Worth a `git remote -v` sanity check on the new VM before trusting any future `migrate.sh setup` sync.
+
+- **`show-me` and `i-have-adhd` turned out to be real, published Claude Code plugins**
+  (`humanlayer/skills` and `ayghri/i-have-adhd`), not fleet-authored as originally assumed — discovered
+  mid-cutover when a fresh clone lacked these files (they'd only ever existed uncommitted on the old
+  VM). Rather than committing copies, `create-agent.sh` now has a `plugin_skills:` field that installs
+  the real plugin per agent (`claude plugin marketplace add` + `claude plugin install --scope user`),
+  idempotent on every run, with an always-on `SessionStart` hook flag for `i-have-adhd`. `skills:` stays
+  for genuinely fleet-authored skills with no public source (just `dockerize-and-verify` now).
+  `claude plugin install` was confirmed to safely preserve unrelated keys when it rewrites
+  `~/.claude/settings.json`, so no merge logic was needed against this script's own render step.
 
 ## Not yet specified
 
