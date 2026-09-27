@@ -181,11 +181,6 @@ resources = cfg.get('resources') or {}
 memory_max = str(resources.get('memory_max') or '').strip()
 if memory_max and not re.fullmatch(r'[0-9]+[KMGT]|infinity', memory_max):
     sys.exit("resources.memory_max must look like 6G, 512M, or 'infinity'")
-shared_images = resources.get('shared_images') or []
-if not isinstance(shared_images, list) or not all(isinstance(i, str) for i in shared_images):
-    sys.exit("resources.shared_images must be a list of image refs")
-open(f"{stage}/shared-images.list", 'w').write("".join(i.strip() + "\n" for i in shared_images if i.strip()))
-
 scalars = {
     'NAME': name, 'REPO': repo, 'REPO_DIR': repo_dir,
     'GIT_NAME': get(cfg, 'git.author_name'),
@@ -407,25 +402,17 @@ ok " daily prune timer enabled (dangling images + stopped containers)"
 # native overlay works fine here once `driver = "overlay"` is explicit -- the
 # fuse-overlayfs mount_program was unnecessary and costs real Testcontainers I/O
 # performance. Don't add mount_program here; only the explicit driver line is needed.
-SHARED_STORE=""
-if [[ -s "$STAGE/shared-images.list" ]]; then
-  # Shared read-only base-image store (opt-in per-agent via resources.shared_images) —
-  # lets agents that build/run the same stack (e.g. aruvii-developer + aruvii-qa)
-  # reference one shared copy of common base images instead of each keeping their own.
-  SHARED_STORE=/var/lib/podman-shared-images
-  mkdir -p "$SHARED_STORE"
-  while IFS= read -r IMG; do
-    [[ -n "$IMG" ]] || continue
-    podman --root "$SHARED_STORE" image exists "$IMG" 2>/dev/null \
-      || { log "pulling $IMG into shared store"; podman --root "$SHARED_STORE" pull "$IMG"; }
-  done < "$STAGE/shared-images.list"
-  chmod -R a+rX "$SHARED_STORE"
-fi
+#
+# A shared read-only additionalimagestore (opt-in per-agent, one copy of common base
+# images instead of each agent keeping their own) was tried and removed the same day:
+# confirmed on an isolated test user that it breaks both `podman run` (this same
+# resolv.conf error) and buildah multi-stage builds (chown denied on a root:root 755
+# layer). Not worth the fragility for ~1.5GB — every agent just pulls its own images.
 as_agent 'mkdir -p ~/.config/containers'
-python3 - "$HOME_DIR/.config/containers/storage.conf" "$SHARED_STORE" <<'PY'
+python3 - "$HOME_DIR/.config/containers/storage.conf" <<'PY'
 import tomllib, sys
 
-path, shared = sys.argv[1], sys.argv[2]
+path = sys.argv[1]
 try:
     with open(path, 'rb') as f:
         cfg = tomllib.load(f)
@@ -434,13 +421,6 @@ except FileNotFoundError:
 
 storage = cfg.setdefault('storage', {})
 storage['driver'] = 'overlay'
-
-if shared:
-    opts = storage.setdefault('options', {})
-    stores = opts.get('additionalimagestores') or []
-    if shared not in stores:
-        stores.append(shared)
-    opts['additionalimagestores'] = stores
 
 def fmt_val(v):
     if isinstance(v, bool):
@@ -470,9 +450,6 @@ with open(path, 'w') as f:
 PY
 chown "$AGENT:$AGENT" "$HOME_DIR/.config/containers/storage.conf"
 ok " storage.conf: driver=overlay set explicitly (no more auto-pick failures)"
-if [[ -n "$SHARED_STORE" ]]; then
-  ok " shared image store wired ($SHARED_STORE)"
-fi
 
 # `podman build` (buildah) defaults RUN-step nofile to 1024:1024 regardless of
 # the caller's ulimit — only containers.conf's default_ulimits or an explicit
