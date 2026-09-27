@@ -332,6 +332,16 @@ chmod 750 "$HOME_DIR"
 # lingering keeps /run/user/<uid> alive for rootless podman under runuser -l
 # (empty XDG_RUNTIME_DIR there), and keeps agent containers running unattended
 loginctl enable-linger "$AGENT" 2>/dev/null || true
+# On a brand-new user, the systemd --user session (D-Bus at /run/user/<uid>/bus) takes a
+# moment to actually start after enabling linger -- every `systemctl --user` call below
+# fails with "Failed to connect to bus" without this wait. Reconciling an EXISTING user
+# never hit this (its session was already warm), which is why it only surfaced on a
+# genuinely first-time creation (confirmed live during cutover).
+AGENT_UID=$(id -u "$AGENT")
+for _ in $(seq 1 20); do
+  [[ -S "/run/user/$AGENT_UID/bus" ]] && break
+  sleep 0.5
+done
 ok " lingering enabled (rootless containers)"
 
 # ---------- resource governance (ticket 12, contabo-migration map) ----------
@@ -339,7 +349,6 @@ ok " lingering enabled (rootless containers)"
 # 2026-08-29 took systemd-journald down with it. A systemd user-slice cap bounds
 # everything the agent runs (container or not), not just individual containers.
 if [[ -n "${MEMORY_MAX:-}" ]]; then
-  AGENT_UID=$(id -u "$AGENT")
   SLICE_DIR="/etc/systemd/system/user-${AGENT_UID}.slice.d"
   mkdir -p "$SLICE_DIR"
   cat > "$SLICE_DIR/50-memory-max.conf" <<EOF
