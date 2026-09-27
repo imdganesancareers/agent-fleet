@@ -125,14 +125,23 @@ agent has answered a live Discord mention from there.
   (`dev.aruvii.ai`, `qa.aruvii.ai`) rendered correctly with the offline-page fallback, Caddy active.
   Full TLS/offline-page verification waits on DNS (ticket 08).
 - [Resource governance](issues/12-resource-governance.md) — new `resources:` block in `agent.yaml`
-  (`memory_max`, `shared_images`), implemented in `create-agent.sh`, applied and verified live on all 4
-  agents on **this** VM (fixes the box actually running today; the script itself reaches the new VM on
-  the next pull). Tiered memory ceiling (6G dev/qa, 3G analyst/spec-reviewer) via a systemd user-slice
-  drop-in; a daily prune timer that turned out to need a third step beyond the ticket's plan — buildah's
-  own leftover working containers survive a normal `podman container prune`, and 48 of them were found
-  pinning ~7GB on `aruvii-developer` alone (7.6G → 488M after cleanup); a shared read-only base-image
-  store for dev+qa. Also caught: the ticket's own image list had a stale `maven` image left over from
-  before the Gradle migration (#440) — corrected against the real Dockerfile/compose/Testcontainers refs.
+  (`memory_max`), implemented in `create-agent.sh`, applied and verified live on all 4 agents. Tiered
+  memory ceiling (6G dev/qa, 3G analyst/spec-reviewer) via a systemd user-slice drop-in; a daily prune
+  timer that needed a third step beyond the ticket's plan — buildah's own leftover working containers
+  survive a normal `podman container prune`, and 48 of them were found pinning ~7GB on `aruvii-developer`
+  alone (7.6G → 488M after cleanup). Also caught: the ticket's own image list had a stale `maven` image
+  left over from before the Gradle migration (#440).
+  **Shared image store: implemented, then removed the same day (2026-09-27)** — confirmed on an
+  isolated throwaway test user that a read-only `additionalimagestore` breaks both `podman run` directly
+  and buildah multi-stage builds. Not worth the fragility for ~1.5GB; every agent just pulls its own
+  images now.
+  **Separately, a real podman bug found and fixed**: an unset `storage.conf` driver makes podman
+  auto-pick something that fails every container with a resolv.conf OCI error — reproduced on a clean
+  test user and on `aruvii-qa` independently. The fix is just `driver = "overlay"` explicit — the
+  `fuse-overlayfs` workaround `aruvii-developer` had applied itself was unnecessary and is the confirmed
+  cause of its slower Testcontainers runs. Fixed for all future/fresh agents; `aruvii-developer` itself
+  stays on fuse-overlayfs for now (switching an initialized store's driver needs a wipe, deferred as a
+  separate maintenance step against its real data).
 
 - **This local `agent-fleet` checkout's `origin` remote was found misconfigured** (pointed at
   `gitlab.com/ai-agent-build-platform/agent-platform` instead of

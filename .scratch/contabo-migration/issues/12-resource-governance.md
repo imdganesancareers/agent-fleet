@@ -86,12 +86,32 @@ guarded by `pgrep -f "buildah|podman.*build"` first so a daily timer can't rip o
 **7.6G → 488M** the moment the 48 buildah containers were removed and the now-unpinned dangling layers
 (including the stale `maven` image below) were pruned. `aruvii-qa` is at 962M post-cleanup.
 
-**Shared base-image store**: implemented via podman's `additionalimagestores` (a root-populated,
-read-only store at `/var/lib/podman-shared-images`, referenced from each opted-in agent's
-`~/.config/containers/storage.conf`). Opt-in per agent via `resources.shared_images` in `agent.yaml` —
-wired for `aruvii-developer` and `aruvii-qa` only (the two that build/run the same `agent-platform`
-compose stack). Populated with 8 images, 1.5G total, shared once instead of duplicated across both
-agents' own stores.
+**Shared base-image store — implemented, then removed the same day (2026-09-27).** Initially wired via
+podman's `additionalimagestores` (a root-populated, read-only store at `/var/lib/podman-shared-images`)
+for `aruvii-developer` and `aruvii-qa`, populated with 8 images, 1.5G total. Discovered live on the new
+VM: `aruvii-developer` hit a real buildah failure building a multi-stage Dockerfile — chown denied on a
+layer from the read-only shared store (root:root 755) — and self-disabled it defensively. Investigating
+further (isolated throwaway test user, not live agent data) found the problem is **not narrow to
+buildah**: a plain `podman run` using an image sourced only from the shared store fails with the exact
+same `resolv.conf` OCI error described below, while the identical image pulled into the agent's own
+local store runs fine. This is a fundamental incompatibility with running anything from a read-only
+additionalimagestore in this environment, not an edge case. **Removed entirely** — `resources.shared_images`
+dropped from both agents' `agent.yaml`, the whole mechanism removed from `create-agent.sh`. Every agent
+just pulls its own copy now; ~1.5GB duplicated between dev/qa is a fine trade for something that works.
+
+**A second, unrelated but more serious podman bug found and fixed the same day**: a fresh agent's
+`storage.conf` has no explicit `driver`, and podman's own auto-pick fails every container with a
+`crun: open .../etc/resolv.conf: No such file or directory` OCI error — reproduced on a clean isolated
+test user AND independently on `aruvii-qa`. `aruvii-developer` had already hit this too and "fixed" it
+by adding `mount_program = "/usr/bin/fuse-overlayfs"`, but an isolated test with only `driver = "overlay"`
+set (no mount_program) ran a real container successfully — the fuse-overlayfs detour was unnecessary,
+and is the confirmed cause of `aruvii-developer`'s slower Testcontainers runs (fuse-overlayfs routes
+storage I/O through userspace FUSE instead of the kernel). Fixed properly in `create-agent.sh`: every
+agent's `storage.conf` now gets `driver = "overlay"` written explicitly. Applied and verified live on
+`aruvii-qa` (wiped its negligible 188K local store, reinitialized, confirmed a real `podman run` works).
+`aruvii-developer` is left on `fuse-overlayfs` for now — switching an already-initialized store's driver
+needs a wipe, which isn't safe to do against its real cached data without a deliberate, separate
+maintenance step; it works today, just slower.
 
 **A real bug caught mid-implementation, not from the ticket's own investigation**: the ticket's original
 image list (copied into the first draft of `shared_images`) included `maven:3.9.16-eclipse-temurin-25`.
